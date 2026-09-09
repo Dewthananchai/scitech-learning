@@ -1,0 +1,1044 @@
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { mockLessons, mockQuestions, mockQuizzes, mockSubjects } from '../data/mockData';
+import { onetSampleQuestions } from '../data/onetSampleQuestions';
+import type { Lesson, Question, Quiz, SubjectUnit, Announcement, CalendarEvent, AttendanceSession, AttendanceRecord, Mission, MissionCompletion, LessonProgress, DailyAutoMission, LessonSession, Worksheet, WorksheetSubmission } from '../types';
+import { worksheetApi, submissionApi } from '../api/worksheetApi';
+
+// Storage keys
+const KEYS = {
+  subjects: 'scitech_subjects',
+  lessons: 'scitech_lessons',
+  questions: 'scitech_questions',
+  quizzes: 'scitech_quizzes',
+};
+
+// Load from localStorage, fallback to mock data
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) return JSON.parse(stored);
+  } catch (e) {
+    console.error(`Failed to load ${key} from storage:`, e);
+  }
+  return fallback;
+}
+
+// Save to localStorage
+function saveToStorage<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error(`Failed to save ${key} to storage:`, e);
+  }
+}
+
+// Initial IDs for new items
+let nextSubjectId = Math.max(...mockSubjects.map(s => s.id)) + 1;
+let nextLessonId = Math.max(...mockLessons.map(l => l.id)) + 1;
+let nextQuestionId = Math.max(...mockQuestions.map(q => q.id), ...onetSampleQuestions.map(q => q.id)) + 1;
+let nextQuizId = Math.max(...mockQuizzes.map(q => q.id)) + 1;
+let nextAnnouncementId = 1;
+let nextCalendarEventId = 1;
+
+// ===== SUBJECTS & UNITS =====
+export function useSubjects() {
+  const [subjects, setSubjects] = useState<SubjectUnit[]>(() =>
+    loadFromStorage(KEYS.subjects, mockSubjects)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS.subjects, subjects);
+  }, [subjects]);
+
+  const addSubject = useCallback((subject: Omit<SubjectUnit, 'id'>) => {
+    const newSubject: SubjectUnit = {
+      ...subject,
+      id: nextSubjectId++,
+    };
+    setSubjects(prev => [...prev, newSubject]);
+    return newSubject;
+  }, []);
+
+  const updateSubject = useCallback((id: number, updates: Partial<SubjectUnit>) => {
+    setSubjects(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  }, []);
+
+  const deleteSubject = useCallback((id: number) => {
+    setSubjects(prev => prev.filter(s => s.id !== id));
+  }, []);
+
+  const toggleSubjectActive = useCallback((id: number) => {
+    setSubjects(prev => prev.map(s =>
+      s.id === id ? { ...s, is_active: !s.is_active } : s
+    ));
+  }, []);
+
+  return { subjects, addSubject, updateSubject, deleteSubject, toggleSubjectActive };
+}
+
+// ===== LESSONS =====
+export function useLessons() {
+  const [lessons, setLessons] = useState<Lesson[]>(() =>
+    loadFromStorage(KEYS.lessons, mockLessons)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS.lessons, lessons);
+  }, [lessons]);
+
+  const addLesson = useCallback((lesson: Omit<Lesson, 'id' | 'view_count'>) => {
+    const newLesson: Lesson = {
+      ...lesson,
+      id: nextLessonId++,
+      view_count: 0,
+    };
+    setLessons(prev => [...prev, newLesson]);
+    return newLesson;
+  }, []);
+
+  const updateLesson = useCallback((id: number, updates: Partial<Lesson>) => {
+    setLessons(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
+  }, []);
+
+  const deleteLesson = useCallback((id: number) => {
+    setLessons(prev => prev.filter(l => l.id !== id));
+  }, []);
+
+  const togglePublish = useCallback((id: number) => {
+    setLessons(prev => prev.map(l =>
+      l.id === id ? { ...l, is_published: !l.is_published } : l
+    ));
+  }, []);
+
+  return { lessons, addLesson, updateLesson, deleteLesson, togglePublish };
+}
+
+// ===== QUESTIONS =====
+/** Flag: mark that the sample O-NET questions have been merged into the bank once */
+const ONET_SEED_KEY = 'scitech_onet_seed_v1';
+
+/**
+ * Load questions from localStorage (fallback = mock lesson questions + sample O-NET bank).
+ * If a browser already has stored data WITHOUT O-NET questions, merge the sample O-NET
+ * bank in once so students always have questions to practice with.
+ */
+function loadQuestions(): Question[] {
+  const fullFallback: Question[] = [...mockQuestions, ...onetSampleQuestions];
+  const stored = loadFromStorage<Question[]>(KEYS.questions, fullFallback);
+  const base = Array.isArray(stored) ? stored : fullFallback;
+  let result = base;
+  let maxId = base.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0);
+
+  try {
+    if (!localStorage.getItem(ONET_SEED_KEY)) {
+      // First visit with this build — make sure the sample O-NET bank exists (no duplicates by text)
+      const existingOnetTexts = new Set(
+        base.filter(q => (q as any).category === 'onet').map(q => q.question_text)
+      );
+      const toAdd = onetSampleQuestions.filter(q => !existingOnetTexts.has(q.question_text));
+      if (toAdd.length > 0) {
+        const added = toAdd.map((q, i) => ({ ...q, id: maxId + i + 1 }));
+        result = [...base, ...added];
+        maxId += toAdd.length;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to seed O-NET questions:', e);
+  } finally {
+    nextQuestionId = maxId + 1;
+    try { localStorage.setItem(ONET_SEED_KEY, '1'); } catch { /* ignore */ }
+  }
+  return result;
+}
+
+export function useQuestions() {
+  const [questions, setQuestions] = useState<Question[]>(loadQuestions);
+
+  useEffect(() => {
+    saveToStorage(KEYS.questions, questions);
+  }, [questions]);
+
+  const addQuestion = useCallback((question: Omit<Question, 'id'>) => {
+    const newQuestion: Question = {
+      ...question,
+      id: nextQuestionId++,
+    };
+    setQuestions(prev => [...prev, newQuestion]);
+    return newQuestion;
+  }, []);
+
+  const addQuestionsBatch = useCallback((newQuestions: Omit<Question, 'id'>[]) => {
+    const added = newQuestions.map(q => ({
+      ...q,
+      id: nextQuestionId++,
+    }));
+    setQuestions(prev => [...prev, ...added]);
+    return added;
+  }, []);
+
+  const updateQuestion = useCallback((id: number, updates: Partial<Question>) => {
+    setQuestions(prev => prev.map(q => q.id === id ? { ...q, ...updates } : q));
+  }, []);
+
+  const deleteQuestion = useCallback((id: number) => {
+    setQuestions(prev => prev.filter(q => q.id !== id));
+  }, []);
+
+  const deleteQuestionsByCategory = useCallback((category: string) => {
+    setQuestions(prev => prev.filter(q => q.category !== category));
+  }, []);
+
+  return { questions, addQuestion, addQuestionsBatch, updateQuestion, deleteQuestion, deleteQuestionsByCategory };
+}
+
+// ===== QUIZZES =====
+export function useQuizzes() {
+  const [quizzes, setQuizzes] = useState<Quiz[]>(() =>
+    loadFromStorage(KEYS.quizzes, mockQuizzes)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS.quizzes, quizzes);
+  }, [quizzes]);
+
+  const addQuiz = useCallback((quiz: Omit<Quiz, 'id'>) => {
+    const newQuiz: Quiz = {
+      ...quiz,
+      id: nextQuizId++,
+    };
+    setQuizzes(prev => [...prev, newQuiz]);
+    return newQuiz;
+  }, []);
+
+  return { quizzes, addQuiz };
+}
+
+// ===== ANNOUNCEMENTS =====
+const mockAnnouncements: Announcement[] = [
+  {
+    id: 1,
+    title: 'เปิดเทอมใหม่ ปีการศึกษา 2569',
+    content: 'ยินดีต้อนรับนักเรียนทุกคนสู่ปีการศึกษาใหม่ มีบทเรียนและแบบทดสอบใหม่ๆ มากมาย',
+    type: 'info',
+    target_audience: 'all',
+    is_active: true,
+    created_by: 'ครูวิภาวดี',
+    created_at: '2569-05-15',
+  },
+  {
+    id: 2,
+    title: 'แบบทดสอบวิทยาศาสตร์ ป.1',
+    content: 'มีแบบทดสอบใหม่ในหน่วยสิ่งมีชีวิต สำหรับนักเรียนชั้น ป.1',
+    type: 'assignment',
+    target_audience: 'students',
+    grade_levels: [1],
+    is_active: true,
+    created_by: 'ครูสมชาย',
+    created_at: '2569-06-01',
+  },
+];
+
+const KEYS_ANNOUNCEMENTS = 'scitech_announcements';
+
+export function useAnnouncements() {
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() =>
+    loadFromStorage(KEYS_ANNOUNCEMENTS, mockAnnouncements)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS_ANNOUNCEMENTS, announcements);
+    // Update next ID
+    if (announcements.length > 0) {
+      nextAnnouncementId = Math.max(...announcements.map(a => a.id)) + 1;
+    }
+  }, [announcements]);
+
+  const addAnnouncement = useCallback((announcement: Omit<Announcement, 'id' | 'created_at'>) => {
+    const newAnnouncement: Announcement = {
+      ...announcement,
+      id: nextAnnouncementId++,
+      created_at: new Date().toISOString().split('T')[0],
+    };
+    setAnnouncements(prev => [newAnnouncement, ...prev]);
+    return newAnnouncement;
+  }, []);
+
+  const updateAnnouncement = useCallback((id: number, updates: Partial<Announcement>) => {
+    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+  }, []);
+
+  const deleteAnnouncement = useCallback((id: number) => {
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
+  }, []);
+
+  return { announcements, addAnnouncement, updateAnnouncement, deleteAnnouncement };
+}
+
+// ===== ANNOUNCEMENT READ TRACKING (per student) =====
+
+const announcementReadsKey = (studentId: number) => `scitech_announcement_reads_${studentId}`;
+
+/**
+ * Tracks which announcements a student has opened (stored per student in localStorage).
+ * The 🔔 bell badge counts only announcements visible to the student that are NOT in this list.
+ */
+export function useAnnouncementReads(studentId?: number) {
+  const storageKey = studentId != null ? announcementReadsKey(studentId) : null;
+
+  const [readIds, setReadIds] = useState<number[]>(() =>
+    storageKey != null ? loadFromStorage<number[]>(storageKey, []) : []
+  );
+  const readIdsRef = useRef<number[]>(readIds);
+
+  // Reload when the logged-in user changes (login/logout without remount)
+  useEffect(() => {
+    const next = storageKey != null ? loadFromStorage<number[]>(storageKey, []) : [];
+    readIdsRef.current = next;
+    setReadIds(next);
+  }, [storageKey]);
+
+  // Sync across components (e.g. 📢 page marks read → 🔔 badge in MobileHeader updates live)
+  useEffect(() => {
+    const reload = () => {
+      const next = storageKey != null ? loadFromStorage<number[]>(storageKey, []) : [];
+      readIdsRef.current = next;
+      setReadIds(next);
+    };
+    window.addEventListener('announcement-reads-changed', reload);
+    return () => window.removeEventListener('announcement-reads-changed', reload);
+  }, [storageKey]);
+
+  const markAsRead = useCallback((ids: number[]) => {
+    const next = Array.from(new Set([...readIdsRef.current, ...ids]));
+    readIdsRef.current = next;
+    if (storageKey != null) saveToStorage(storageKey, next);
+    setReadIds(next);
+    window.dispatchEvent(new Event('announcement-reads-changed'));
+  }, [storageKey]);
+
+  const isRead = useCallback((id: number) => readIds.includes(id), [readIds]);
+
+  return { readIds, markAsRead, isRead };
+}
+
+/**
+ * Shared visibility rule for student-facing announcements.
+ * Used by both the 📢 StudentAnnouncements page and the 🔔 bell badge in MobileHeader
+ * so the badge count always matches what the page shows.
+ */
+export function filterVisibleAnnouncements(announcements: Announcement[], gradeLevel?: number): Announcement[] {
+  return announcements.filter(a => {
+    if (!a.is_active) return false;
+    if (a.target_audience === 'all') return true;
+    if (a.target_audience === 'students') {
+      if (!a.grade_levels || a.grade_levels.length === 0) return true;
+      return !!gradeLevel && a.grade_levels.includes(gradeLevel);
+    }
+    return false;
+  });
+}
+
+// ===== WORKSHEETS (ใบงาน) — shared via API server, localStorage fallback =====
+const KEYS_WORKSHEETS = 'scitech_worksheets';
+const WS_POLL_MS = 5000;
+
+async function refreshWorksheets(setWorksheets: (w: Worksheet[]) => void) {
+  const { data } = await worksheetApi.list();
+  setWorksheets(data);
+}
+
+export function useWorksheets() {
+  const [worksheets, setWorksheets] = useState<Worksheet[]>(() =>
+    loadFromStorage<Worksheet[]>(KEYS_WORKSHEETS, [])
+  );
+
+  // Initial load + polling so the teacher/student see each other's changes on LAN
+  useEffect(() => {
+    refreshWorksheets(setWorksheets);
+    const timer = setInterval(() => refreshWorksheets(setWorksheets), WS_POLL_MS);
+    const onFocus = () => refreshWorksheets(setWorksheets);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  // Mirror to localStorage so the UI keeps working offline (fallback cache)
+  useEffect(() => {
+    saveToStorage(KEYS_WORKSHEETS, worksheets);
+  }, [worksheets]);
+
+  const addWorksheet = useCallback(async (worksheet: Omit<Worksheet, 'id'>) => {
+    const created = await worksheetApi.add(worksheet);
+    setWorksheets(prev => [created, ...prev.filter(w => w.id !== created.id)]);
+    return created;
+  }, []);
+
+  const updateWorksheet = useCallback(async (id: number, updates: Partial<Worksheet>) => {
+    setWorksheets(prev => prev.map(w => (w.id === id ? { ...w, ...updates } : w)));
+    await worksheetApi.update(id, updates);
+  }, []);
+
+  const deleteWorksheet = useCallback(async (id: number) => {
+    setWorksheets(prev => prev.filter(w => w.id !== id));
+    await worksheetApi.remove(id);
+  }, []);
+
+  return { worksheets, addWorksheet, updateWorksheet, deleteWorksheet };
+}
+
+// ===== WORKSHEET SUBMISSIONS (นักเรียนส่งใบงาน) — shared via API server =====
+const KEYS_WS_SUBMISSIONS = 'scitech_worksheet_submissions';
+
+async function refreshSubmissions(setSubmissions: (s: WorksheetSubmission[]) => void) {
+  const { data } = await submissionApi.list();
+  setSubmissions(data);
+}
+
+export function useWorksheetSubmissions() {
+  const [submissions, setSubmissions] = useState<WorksheetSubmission[]>(() =>
+    loadFromStorage<WorksheetSubmission[]>(KEYS_WS_SUBMISSIONS, [])
+  );
+
+  useEffect(() => {
+    refreshSubmissions(setSubmissions);
+    const timer = setInterval(() => refreshSubmissions(setSubmissions), WS_POLL_MS);
+    const onFocus = () => refreshSubmissions(setSubmissions);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    saveToStorage(KEYS_WS_SUBMISSIONS, submissions);
+  }, [submissions]);
+
+  const submitWorksheet = useCallback(async (submission: Omit<WorksheetSubmission, 'id'>) => {
+    const created = await submissionApi.add(submission);
+    setSubmissions(prev => [created, ...prev.filter(s => s.id !== created.id)]);
+    return created;
+  }, []);
+
+  const gradeSubmission = useCallback(async (id: number, updates: Partial<WorksheetSubmission>) => {
+    setSubmissions(prev => prev.map(s => (s.id === id ? { ...s, ...updates } : s)));
+    await submissionApi.update(id, updates);
+  }, []);
+
+  return { submissions, submitWorksheet, gradeSubmission };
+}
+
+// ===== CALENDAR EVENTS =====
+const mockCalendarEvents: CalendarEvent[] = [
+  {
+    id: 1,
+    title: 'เปิดเทอม',
+    date: '2026-05-15',
+    type: 'event',
+    color: '#10b981',
+    is_recurring: true,
+  },
+  {
+    id: 2,
+    title: 'สอบกลางภาค',
+    date: '2026-07-15',
+    end_date: '2026-07-19',
+    type: 'exam',
+    color: '#ef4444',
+    grade_levels: [1, 2, 3, 4, 5, 6],
+  },
+  {
+    id: 3,
+    title: 'วันวิทยาศาสตร์',
+    date: '2026-08-18',
+    type: 'event',
+    color: '#8b5cf6',
+  },
+];
+
+const KEYS_CALENDAR = 'scitech_calendar';
+
+export function useCalendarEvents() {
+  const [events, setEvents] = useState<CalendarEvent[]>(() =>
+    loadFromStorage(KEYS_CALENDAR, mockCalendarEvents)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS_CALENDAR, events);
+    if (events.length > 0) {
+      nextCalendarEventId = Math.max(...events.map(e => e.id)) + 1;
+    }
+  }, [events]);
+
+  const addEvent = useCallback((event: Omit<CalendarEvent, 'id'>) => {
+    const newEvent: CalendarEvent = {
+      ...event,
+      id: nextCalendarEventId++,
+    };
+    setEvents(prev => [...prev, newEvent]);
+    return newEvent;
+  }, []);
+
+  const updateEvent = useCallback((id: number, updates: Partial<CalendarEvent>) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  }, []);
+
+  const deleteEvent = useCallback((id: number) => {
+    setEvents(prev => prev.filter(e => e.id !== id));
+  }, []);
+
+  return { events, addEvent, updateEvent, deleteEvent };
+}
+
+// ===== ATTENDANCE =====
+const mockSessions: AttendanceSession[] = [
+  {
+    id: 1,
+    title: 'เช็คชื่อวิทยาศาสตร์ ป.3',
+    date: '2026-09-02',
+    time: '08:30',
+    grade_level: 3,
+    status: 'open',
+    created_by: 'ครูวิภาวดี',
+    created_at: '2026-09-02',
+  },
+  {
+    id: 2,
+    title: 'เช็คชื่อวิทยาศาสตร์ ป.1',
+    date: '2026-09-01',
+    time: '09:00',
+    grade_level: 1,
+    status: 'closed',
+    created_by: 'ครูวิภาวดี',
+    created_at: '2026-09-01',
+  },
+];
+
+const mockRecords: AttendanceRecord[] = [
+  { id: 1, session_id: 2, student_id: 11, student_name: 'ด.ญ. ปุณญ่า สดใส', grade_level: 1, status: 'present', checked_in_at: '2026-09-01T09:05:00' },
+];
+
+const KEYS_ATTENDANCE_SESSIONS = 'scitech_attendance_sessions';
+const KEYS_ATTENDANCE_RECORDS = 'scitech_attendance_records';
+let nextSessionId = 3;
+let nextRecordId = 2;
+
+export function useAttendance() {
+  const [sessions, setSessions] = useState<AttendanceSession[]>(() =>
+    loadFromStorage(KEYS_ATTENDANCE_SESSIONS, mockSessions)
+  );
+  const [records, setRecords] = useState<AttendanceRecord[]>(() =>
+    loadFromStorage(KEYS_ATTENDANCE_RECORDS, mockRecords)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS_ATTENDANCE_SESSIONS, sessions);
+    if (sessions.length > 0) nextSessionId = Math.max(...sessions.map(s => s.id)) + 1;
+  }, [sessions]);
+
+  useEffect(() => {
+    saveToStorage(KEYS_ATTENDANCE_RECORDS, records);
+    if (records.length > 0) nextRecordId = Math.max(...records.map(r => r.id)) + 1;
+  }, [records]);
+
+  const addSession = useCallback((session: Omit<AttendanceSession, 'id' | 'created_at'>) => {
+    const newSession: AttendanceSession = {
+      ...session,
+      id: nextSessionId++,
+      created_at: new Date().toISOString().split('T')[0],
+    };
+    setSessions(prev => [newSession, ...prev]);
+    return newSession;
+  }, []);
+
+  const updateSession = useCallback((id: number, updates: Partial<AttendanceSession>) => {
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  }, []);
+
+  const deleteSession = useCallback((id: number) => {
+    setSessions(prev => prev.filter(s => s.id !== id));
+    setRecords(prev => prev.filter(r => r.session_id !== id));
+  }, []);
+
+  const toggleSessionStatus = useCallback((id: number) => {
+    setSessions(prev => prev.map(s =>
+      s.id === id ? { ...s, status: s.status === 'open' ? 'closed' : 'open' } : s
+    ));
+  }, []);
+
+  const addRecord = useCallback((record: Omit<AttendanceRecord, 'id' | 'checked_in_at'>) => {
+    // Prevent duplicate check-in for same session
+    const existing = records.find(r => r.session_id === record.session_id && r.student_id === record.student_id);
+    if (existing) return existing;
+    const newRecord: AttendanceRecord = {
+      ...record,
+      id: nextRecordId++,
+      checked_in_at: new Date().toISOString(),
+    };
+    setRecords(prev => [...prev, newRecord]);
+    return newRecord;
+  }, [records]);
+
+  const updateRecord = useCallback((id: number, updates: Partial<AttendanceRecord>) => {
+    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  }, []);
+
+  const markAllPresent = useCallback((sessionId: number) => {
+    // This is handled in the admin page with known students
+  }, []);
+
+  return { sessions, records, addSession, updateSession, deleteSession, toggleSessionStatus, addRecord, updateRecord, markAllPresent };
+}
+
+// ===== DAILY MISSIONS =====
+const todayStr = () => new Date().toISOString().split('T')[0];
+
+const mockMissions: Mission[] = [
+  {
+    id: 1,
+    title: 'แบบทดสอบสิ่งมีชีวิต',
+    description: 'ตอบคำถามเรื่องสิ่งมีชีวิตให้ถูก 3 ข้อ รับ 10 ดาว',
+    lesson_id: 1,
+    subject_unit_id: 1,
+    grade_level: 1,
+    stars_reward: 10,
+    question_count: 3,
+    is_active: true,
+    is_daily_random: false,
+    created_by: 'ครูวิภาวดี',
+    created_at: '2026-09-01',
+  },
+  {
+    id: 2,
+    title: 'ภารกิจวิทยาศาสตร์ ป.3',
+    description: 'ทดสอบความรู้วิทยาศาสตร์ 回答 5 ข้อ รับ 15 ดาว',
+    grade_level: 3,
+    stars_reward: 15,
+    question_count: 5,
+    is_active: true,
+    is_daily_random: true,
+    created_by: 'ครูวิภาวดี',
+    created_at: '2026-09-01',
+  },
+];
+
+const mockCompletions: MissionCompletion[] = [
+  { id: 1, mission_id: 1, student_id: 11, student_name: 'ด.ญ. ปุณญ่า สดใส', score: 100, total_correct: 3, total_questions: 3, stars_earned: 10, completed_at: '2026-09-01T10:30:00' },
+];
+
+const KEYS_MISSIONS = 'scitech_missions';
+const KEYS_MISSION_COMPLETIONS = 'scitech_mission_completions';
+let nextMissionId = 3;
+let nextCompletionId = 2;
+
+export function useMissions() {
+  const [missions, setMissions] = useState<Mission[]>(() =>
+    loadFromStorage(KEYS_MISSIONS, mockMissions)
+  );
+  const [completions, setCompletions] = useState<MissionCompletion[]>(() =>
+    loadFromStorage(KEYS_MISSION_COMPLETIONS, mockCompletions)
+  );
+
+  useEffect(() => {
+    saveToStorage(KEYS_MISSIONS, missions);
+    if (missions.length > 0) nextMissionId = Math.max(...missions.map(m => m.id)) + 1;
+  }, [missions]);
+
+  useEffect(() => {
+    saveToStorage(KEYS_MISSION_COMPLETIONS, completions);
+    if (completions.length > 0) nextCompletionId = Math.max(...completions.map(c => c.id)) + 1;
+  }, [completions]);
+
+  const addMission = useCallback((mission: Omit<Mission, 'id' | 'created_at'>) => {
+    // Prevent duplicate daily missions (same date + same lesson)
+    if (mission.date && mission.lesson_id) {
+      const exists = missions.find(m => m.date === mission.date && m.lesson_id === mission.lesson_id);
+      if (exists) return exists;
+    }
+    const newMission: Mission = {
+      ...mission,
+      id: nextMissionId++,
+      created_at: new Date().toISOString().split('T')[0],
+    };
+    setMissions(prev => [newMission, ...prev]);
+    return newMission;
+  }, [missions]);
+
+  const updateMission = useCallback((id: number, updates: Partial<Mission>) => {
+    setMissions(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+  }, []);
+
+  const deleteMission = useCallback((id: number) => {
+    setMissions(prev => prev.filter(m => m.id !== id));
+    setCompletions(prev => prev.filter(c => c.mission_id !== id));
+  }, []);
+
+  const addCompletion = useCallback((completion: Omit<MissionCompletion, 'id' | 'completed_at'>) => {
+    // Prevent duplicate completion
+    const exists = completions.find(c => c.mission_id === completion.mission_id && c.student_id === completion.student_id);
+    if (exists) return exists;
+    const newCompletion: MissionCompletion = {
+      ...completion,
+      id: nextCompletionId++,
+      completed_at: new Date().toISOString(),
+    };
+    setCompletions(prev => [...prev, newCompletion]);
+    return newCompletion;
+  }, [completions]);
+
+  const getCompletionsForMission = useCallback((missionId: number) => {
+    return completions.filter(c => c.mission_id === missionId);
+  }, [completions]);
+
+  const getCompletionsForStudent = useCallback((studentId: number) => {
+    return completions.filter(c => c.student_id === studentId);
+  }, [completions]);
+
+  return { missions, completions, addMission, updateMission, deleteMission, addCompletion, getCompletionsForMission, getCompletionsForStudent };
+}
+
+// ===== LESSON PROGRESS =====
+const KEYS_LESSON_PROGRESS = 'scitech_lesson_progress';
+export function useLessonProgress() {
+  const [progress, setProgress] = useState<LessonProgress[]>(() => {
+    try {
+      const stored = localStorage.getItem(KEYS_LESSON_PROGRESS);
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(KEYS_LESSON_PROGRESS, JSON.stringify(progress));
+  }, [progress]);
+
+  const markCompleted = useCallback((lessonId: number, studentId: number) => {
+    setProgress(prev => {
+      const exists = prev.find(p => p.lesson_id === lessonId && p.student_id === studentId);
+      if (exists) return prev;
+      return [...prev, { lesson_id: lessonId, student_id: studentId, completed_at: new Date().toISOString() }];
+    });
+  }, []);
+
+  const getCompletedLessons = useCallback((studentId: number): number[] => {
+    return progress.filter(p => p.student_id === studentId).map(p => p.lesson_id);
+  }, [progress]);
+
+  const isLessonCompleted = useCallback((lessonId: number, studentId: number): boolean => {
+    return progress.some(p => p.lesson_id === lessonId && p.student_id === studentId);
+  }, [progress]);
+
+  return { progress, markCompleted, getCompletedLessons, isLessonCompleted };
+}
+
+// ===== AUTO DAILY MISSIONS =====
+const today = () => new Date().toISOString().split('T')[0];
+const KEYS_DAILY_MISSIONS = 'scitech_daily_missions';
+function loadDailyMissions(): DailyAutoMission[] {
+  try {
+    const stored = localStorage.getItem(KEYS_DAILY_MISSIONS);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
+}
+
+/**
+ * Time slots for daily mission generation
+ */
+export const MISSION_TIME_SLOTS = ['07:00', '09:00', '11:00', '13:00', '15:00', '17:00'];
+
+/** Get the current time slot */
+export function getCurrentTimeSlot(): string {
+  const now = new Date();
+  const current = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  let slot = MISSION_TIME_SLOTS[0];
+  for (const s of MISSION_TIME_SLOTS) {
+    if (current >= s) slot = s;
+  }
+  return slot;
+}
+
+/** Check which new time slots have arrived since last checked */
+export function getNewTimeSlots(lastCheckedSlot: string): string[] {
+  const current = getCurrentTimeSlot();
+  const currentIdx = MISSION_TIME_SLOTS.indexOf(current);
+  const lastIdx = MISSION_TIME_SLOTS.indexOf(lastCheckedSlot);
+  if (currentIdx <= lastIdx) return [];
+  return MISSION_TIME_SLOTS.slice(lastIdx + 1, currentIdx + 1);
+}
+
+/**
+ * Generate daily auto-missions for a student at a specific time slot.
+ * Each slot generates 1 mission from a completed lesson.
+ */
+export function generateDailyMissions(
+  studentId: number,
+  gradeLevel: number,
+  completedLessonIds: number[],
+  allLessons: Lesson[],
+  allQuestions: Question[],
+  existingMissions: Mission[],
+  timeSlot?: string,
+): Mission[] {
+  const todayStr = today();
+  const slot = timeSlot || getCurrentTimeSlot();
+
+  // Check if this time slot already generated
+  const slotKey = `${studentId}-${todayStr}-${slot}`;
+  const dailyMissionsData = loadDailyMissions();
+  const existing = dailyMissionsData.find(d => d.id === slotKey);
+
+  if (existing) {
+    return existing.lessons_used
+      .map(lessonId => existingMissions.find(m => m.lesson_id === lessonId && m.date === todayStr))
+      .filter((m): m is Mission => !!m);
+  }
+
+  // Find published lessons that the student has completed
+  const completedLessons = allLessons.filter(
+    l => l.is_published && completedLessonIds.includes(l.id)
+  );
+
+  if (completedLessons.length === 0) return [];
+
+  // Pick a lesson not already used in other time slots today
+  const usedToday = new Set(
+    dailyMissionsData
+      .filter(d => d.student_id === studentId && d.date === todayStr)
+      .flatMap(d => d.lessons_used)
+  );
+  const available = completedLessons.filter(l => !usedToday.has(l.id));
+  const pickFrom = available.length > 0 ? available : [...completedLessons].sort(() => Math.random() - 0.5);
+  const selectedLesson = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+
+  if (!selectedLesson) return [];
+
+  const lessonQuestions = allQuestions.filter(
+    q => q.lesson_id === selectedLesson.id && (!q.category || q.category === 'lesson')
+  );
+  if (lessonQuestions.length === 0) return [];
+
+  const shuffled = [...lessonQuestions].sort(() => Math.random() - 0.5);
+  const picked = shuffled.slice(0, Math.min(3, lessonQuestions.length));
+  const maxStars = picked.length * 3;
+
+  const slotLabel = slot.replace(':', '.');
+  const mission: Mission = {
+    id: Date.now(),
+    title: `🎯 ${selectedLesson.title} (${picked.length} ข้อ)`,
+    description: `⏰ ${slot} — สุ่มจาก "${selectedLesson.title}" — ทำถูก 100% รับ ${maxStars} ดาว`,
+    lesson_id: selectedLesson.id,
+    grade_level: gradeLevel,
+    stars_reward: maxStars,
+    question_count: picked.length,
+    is_active: true,
+    is_daily_random: true,
+    created_by: `ระบบ (${slot})`,
+    created_at: todayStr,
+    date: todayStr,
+  } as Mission;
+
+  // Save to localStorage
+  const dailyRecord: DailyAutoMission = {
+    id: slotKey,
+    student_id: studentId,
+    date: todayStr,
+    time_slot: slot,
+    lessons_used: [selectedLesson.id],
+    generated_at: new Date().toISOString(),
+  };
+  const updated = [...dailyMissionsData.filter(d => d.id !== slotKey), dailyRecord];
+  localStorage.setItem(KEYS_DAILY_MISSIONS, JSON.stringify(updated));
+
+  return [mission];
+}
+
+// ===== LESSON SESSION STATUS =====
+const KEYS_LESSON_SESSIONS = 'scitech_lesson_sessions';
+const LESSON_SESSION_SEED_KEY = 'scitech_lesson_session_seed_v1';
+
+export function useLessonSession() {
+  const [sessions, setSessions] = useState<LessonSession[]>(() => {
+    try {
+      const stored = localStorage.getItem(KEYS_LESSON_SESSIONS);
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
+
+  // Seed sample completed sessions for demo student (id: 10) on first visit
+  useEffect(() => {
+    if (sessions.length > 0 || localStorage.getItem(LESSON_SESSION_SEED_KEY)) return;
+    // Mark first 2 published lessons as completed for student 10
+    const published = mockLessons.filter(l => l.is_published).slice(0, 2);
+    const seedSessions: LessonSession[] = published.map((l, i) => ({
+      lesson_id: l.id,
+      student_id: 10,
+      status: 'completed' as const,
+      started_at: '2026-09-01T08:00:00',
+      completed_at: `2026-09-01T08:${15 + i * 10}:00`,
+      elapsed_seconds: (i + 1) * 600,
+    }));
+    // Also start 1 in-progress lesson
+    const inProgressLesson = mockLessons.find(l => l.is_published && !published.includes(l));
+    if (inProgressLesson) {
+      seedSessions.push({
+        lesson_id: inProgressLesson.id,
+        student_id: 10,
+        status: 'in_progress' as const,
+        started_at: '2026-09-05T09:00:00',
+        elapsed_seconds: 360,
+      });
+    }
+    setSessions(seedSessions);
+    try { localStorage.setItem(KEYS_LESSON_SESSIONS, JSON.stringify(seedSessions)); } catch { /* ignore */ }
+    try { localStorage.setItem(LESSON_SESSION_SEED_KEY, '1'); } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(KEYS_LESSON_SESSIONS, JSON.stringify(sessions));
+  }, [sessions]);
+
+  const startLesson = useCallback((lessonId: number, studentId: number) => {
+    setSessions(prev => {
+      const existing = prev.find(s => s.lesson_id === lessonId && s.student_id === studentId);
+      if (existing) {
+        // If already completed, don't restart
+        if (existing.status === 'completed') return prev;
+        return prev;
+      }
+      return [...prev, {
+        lesson_id: lessonId,
+        student_id: studentId,
+        status: 'in_progress' as const,
+        started_at: new Date().toISOString(),
+      }];
+    });
+  }, []);
+
+  const completeLesson = useCallback((lessonId: number, studentId: number) => {
+    setSessions(prev => prev.map(s =>
+      s.lesson_id === lessonId && s.student_id === studentId
+        ? { ...s, status: 'completed' as const, completed_at: new Date().toISOString() }
+        : s
+    ));
+  }, []);
+
+  const getSession = useCallback((lessonId: number, studentId: number): LessonSession | undefined => {
+    return sessions.find(s => s.lesson_id === lessonId && s.student_id === studentId);
+  }, [sessions]);
+
+  const getStatus = useCallback((lessonId: number, studentId: number): 'not_started' | 'in_progress' | 'completed' => {
+    const session = sessions.find(s => s.lesson_id === lessonId && s.student_id === studentId);
+    return session?.status || 'not_started';
+  }, [sessions]);
+
+  const updateElapsed = useCallback((lessonId: number, studentId: number, seconds: number) => {
+    setSessions(prev => prev.map(s =>
+      s.lesson_id === lessonId && s.student_id === studentId
+        ? { ...s, elapsed_seconds: seconds }
+        : s
+    ));
+  }, []);
+
+  const getElapsed = useCallback((lessonId: number, studentId: number): number => {
+    const session = sessions.find(s => s.lesson_id === lessonId && s.student_id === studentId);
+    return session?.elapsed_seconds || 0;
+  }, [sessions]);
+
+  const resetAllStatus = useCallback(() => {
+    setSessions([]);
+  }, []);
+
+  return { sessions, startLesson, completeLesson, getSession, getStatus, updateElapsed, getElapsed, resetAllStatus };
+}
+
+// ===== USERS (Teachers & Students) =====
+export interface AppUser {
+  id: number;
+  username: string;
+  password: string;
+  full_name: string;
+  role: 'student' | 'admin' | 'teacher';
+  grade_level?: number;
+  class_name?: string;
+  school_name?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+const mockUsers: AppUser[] = [
+  { id: 1, username: 'admin', password: 'admin123', full_name: 'ครูวิภาวดี ใจดี', role: 'admin', is_active: true, created_at: '2026-05-01' },
+  { id: 2, username: 'teacher1', password: '1234', full_name: 'ครูสมชาย รักการสอน', role: 'teacher', is_active: true, created_at: '2026-05-01' },
+  { id: 10, username: 'num01', password: '1234', full_name: 'ด.ช. ภูมิภัทร รักเรียน', role: 'student', grade_level: 3, class_name: '3/1', is_active: true, created_at: '2026-06-01' },
+  { id: 11, username: 'num02', password: '1234', full_name: 'ด.ญ. ปุณญ่า สดใส', role: 'student', grade_level: 1, class_name: '1/2', is_active: true, created_at: '2026-06-01' },
+  { id: 12, username: 'num03', password: '1234', full_name: 'ด.ช. นพณัฐ น้ำใจ', role: 'student', grade_level: 2, class_name: '2/1', is_active: true, created_at: '2026-06-01' },
+  { id: 21, username: 'num04', password: '1234', full_name: 'ด.ช. อาทิตย์ ฉายแสง', role: 'student', grade_level: 1, class_name: '1/1', is_active: true, created_at: '2026-06-01' },
+  { id: 22, username: 'num05', password: '1234', full_name: 'ด.ญ. จันทร์เจ้า สว่าง', role: 'student', grade_level: 1, class_name: '1/1', is_active: true, created_at: '2026-06-01' },
+  { id: 23, username: 'num06', password: '1234', full_name: 'ด.ช. วิชญ์ พัฒนา', role: 'student', grade_level: 1, class_name: '1/3', is_active: true, created_at: '2026-06-01' },
+  { id: 24, username: 'num07', password: '1234', full_name: 'ด.ญ. ดารารัตน์ บุญมี', role: 'student', grade_level: 2, class_name: '2/2', is_active: true, created_at: '2026-06-01' },
+  { id: 25, username: 'num08', password: '1234', full_name: 'ด.ช. พลวัฒน์ ทองดี', role: 'student', grade_level: 2, class_name: '2/1', is_active: true, created_at: '2026-06-01' },
+  { id: 26, username: 'num09', password: '1234', full_name: 'ด.ญ. ศรันย์ สดใส', role: 'student', grade_level: 3, class_name: '3/2', is_active: true, created_at: '2026-06-01' },
+  { id: 27, username: 'num10', password: '1234', full_name: 'ด.ช. กฤษณะ พัฒนา', role: 'student', grade_level: 3, class_name: '3/1', is_active: true, created_at: '2026-06-01' },
+  { id: 28, username: 'num11', password: '1234', full_name: 'ด.ญ. ชนิดา สุขใจ', role: 'student', grade_level: 3, class_name: '3/3', is_active: true, created_at: '2026-06-01' },
+  { id: 29, username: 'num12', password: '1234', full_name: 'ด.ช. นเรศ ชาญชัย', role: 'student', grade_level: 4, class_name: '4/1', is_active: true, created_at: '2026-06-01' },
+  { id: 30, username: 'num13', password: '1234', full_name: 'ด.ญ. บุษบา มาลัย', role: 'student', grade_level: 4, class_name: '4/2', is_active: true, created_at: '2026-06-01' },
+  { id: 31, username: 'num14', password: '1234', full_name: 'ด.ช. ปวเรศ รุ่งเรือง', role: 'student', grade_level: 4, class_name: '4/1', is_active: true, created_at: '2026-06-01' },
+  { id: 32, username: 'num15', password: '1234', full_name: 'ด.ช. ภัทร วงศ์ประเสริฐ', role: 'student', grade_level: 5, class_name: '5/1', is_active: true, created_at: '2026-06-01' },
+  { id: 33, username: 'num16', password: '1234', full_name: 'ด.ญ. มณี สดใส', role: 'student', grade_level: 5, class_name: '5/2', is_active: true, created_at: '2026-06-01' },
+  { id: 34, username: 'num17', password: '1234', full_name: 'ด.ช. ยุคล ชนะใจ', role: 'student', grade_level: 5, class_name: '5/1', is_active: true, created_at: '2026-06-01' },
+  { id: 35, username: 'num18', password: '1234', full_name: 'ด.ช. รัฐภูมิ ศรีสุวรรณ', role: 'student', grade_level: 6, class_name: '6/1', is_active: true, created_at: '2026-06-01' },
+  { id: 36, username: 'num19', password: '1234', full_name: 'ด.ญ. วรรณพร เจริญสุข', role: 'student', grade_level: 6, class_name: '6/2', is_active: true, created_at: '2026-06-01' },
+  { id: 37, username: 'num20', password: '1234', full_name: 'ด.ช. อรรถพล นนท์', role: 'student', grade_level: 6, class_name: '6/1', is_active: true, created_at: '2026-06-01' },
+  { id: 38, username: 'pan01', password: '1234', full_name: 'ด.ญ. ปัญญ่า สดใส', role: 'student', grade_level: 1, class_name: '1/1', is_active: true, created_at: '2026-09-04' },
+];
+
+const KEYS_USERS = 'scitech_users';
+let nextUserId = Math.max(...mockUsers.map(u => u.id)) + 1;
+
+export function useUsers() {
+  const [users, setUsers] = useState<AppUser[]>(() => {
+    const stored = loadFromStorage(KEYS_USERS, mockUsers);
+    // Merge: ensure all mock users exist (handles new mock users added after localStorage was set)
+    const storedIds = new Set(stored.map(u => u.id));
+    const newMockUsers = mockUsers.filter(u => !storedIds.has(u.id));
+    return newMockUsers.length > 0 ? [...stored, ...newMockUsers] : stored;
+  });
+
+  useEffect(() => {
+    saveToStorage(KEYS_USERS, users);
+  }, [users]);
+
+  const addUser = useCallback((user: Omit<AppUser, 'id' | 'created_at'>) => {
+    const newUser: AppUser = {
+      ...user,
+      id: nextUserId++,
+      created_at: new Date().toISOString().split('T')[0],
+    };
+    setUsers(prev => [...prev, newUser]);
+    return newUser;
+  }, []);
+
+  const updateUser = useCallback((id: number, updates: Partial<AppUser>) => {
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
+  }, []);
+
+  const deleteUser = useCallback((id: number) => {
+    setUsers(prev => prev.filter(u => u.id !== id));
+  }, []);
+
+  const toggleUserActive = useCallback((id: number) => {
+    setUsers(prev => prev.map(u =>
+      u.id === id ? { ...u, is_active: !u.is_active } : u
+    ));
+  }, []);
+
+  const getUsersByRole = useCallback((role: 'student' | 'teacher' | 'admin') => {
+    return users.filter(u => u.role === role);
+  }, [users]);
+
+  const getStudentsByGrade = useCallback((gradeLevel: number) => {
+    return users.filter(u => u.role === 'student' && u.grade_level === gradeLevel);
+  }, [users]);
+
+  return { users, addUser, updateUser, deleteUser, toggleUserActive, getUsersByRole, getStudentsByGrade };
+}

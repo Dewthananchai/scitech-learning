@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Freebuff agent metadata
+.freebuff/
+
+# OS junk
+.DS_Store
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Logs
+*.log
