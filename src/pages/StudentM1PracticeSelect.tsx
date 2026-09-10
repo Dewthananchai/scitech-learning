@@ -1,783 +1,952 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { ensureBankData, loadSchoolList, loadYearList } from '../data/m1BankData';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../store/AuthContext';
+import StudentSidebar from '../components/StudentSidebar';
+import MobileHeader from '../components/MobileHeader';
+import { STUDENT_THEME_CSS } from '../styles/studentTheme';
+import MathText from '../components/MathText';
+import { ensureBankData, loadSchoolList, loadYearList, HISTORY_KEY } from '../data/m1BankData';
+import type { M1BankQuestion } from '../data/m1BankData';
 
-/* ---------- constants ---------- */
-const HISTORY_KEY = 'm1_exam_history_v1';
-const GENERAL = 'ทั่วไป';
+interface HistoryEntry {
+  id: string;
+  date: string;
+  summary: string;
+  subject: string;
+  score: number;
+  total: number;
+  percentage: number;
+  isTimer: boolean;
+}
 
-const subjectInfo: Record<string, { name: string; icon: string }> = {
-  random: { name: 'สุ่มทุกวิชา', icon: '🎲' },
-  science: { name: 'วิทยาศาสตร์', icon: '🔬' },
-  math:   { name: 'คณิตศาสตร์', icon: '➗' },
-  thai:   { name: 'ภาษาไทย', icon: '🇹🇭' },
-  english:{ name: 'ภาษาอังกฤษ', icon: '🇬🇧' },
-  social: { name: 'สังคมศึกษา', icon: '🌍' },
-};
-const examSubjects = ['science','math','thai','english','social'];
-
-/* ---------- localStorage helpers ---------- */
-const loadBank = (): any[] => ensureBankData();
-const getHistory = (): any[] => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') || []; } catch { return []; } };
-const saveHistory = (entry: any) => {
-  const h = getHistory();
-  (h as any[]).unshift(entry);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify((h as any[]).slice(0, 50)));
-};
-const clearHistory = () => { if (confirm('ต้องการลบประวัติทั้งหมดหรือไม่?')) { localStorage.removeItem(HISTORY_KEY); } };
-
-const badgeFor = (pct: number) => pct >= 90 ? '🏆' : pct >= 70 ? '🥇' : pct >= 50 ? '🥈' : '📖';
-const commentFor = (pct: number) =>
-  pct >= 90 ? 'ยอดเยี่ยมมาก! เก่งสุดๆ' :
-  pct >= 70 ? 'ดีมาก! เกือบสมบูรณ์แบบแล้ว' :
-  pct >= 50 ? 'ทำได้ดี ฝึกฝนเพิ่มอีกนิดนะ' :
-  'ไม่เป็นไร ลองฝึกทำเพิ่มอีกครั้ง!';
-const nowStr = () => {
-  const d = new Date();
-  return d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' +
-    d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-};
-
-const shuffle = <T,>(arr: T[]): T[] => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
-
-const randomQuestions = (subject: string, count: number, set?: string): any[] => {
-  const bank = loadBank();
-  let pool = subject === 'random' ? bank : bank.filter(q => q.subject === subject);
-  if (set) pool = pool.filter(q => (q.set || '1') === set);
-  pool = shuffle(pool);
-  if (pool.length === 0) return [];
-  let result: any[] = [];
-  while (result.length < count) result = result.concat(pool);
-  return shuffle(result).slice(0, count).map(q => ({ ...q }));
-};
-
-/* ---------- timer hook ---------- */
-/**
- * ตัวจับเวลา: จะเริ่มนับถอยหลังเฉพาะเมื่อ active=true และมีเวลา
- * ใช้ startKey เพื่อรีเซ็ตทุกครั้งที่เริ่มชุดข้อสอบใหม่
- */
-const useTimer = (active: boolean, seconds: number, startKey: number, onEnd: () => void) => {
-  const [timeLeft, setTimeLeft] = useState(seconds);
-  const endRef = useRef(onEnd);
-  endRef.current = onEnd;
-
-  useEffect(() => {
-    if (!active || seconds <= 0) return;
-    setTimeLeft(seconds); // reset เมื่อเริ่มรอบใหม่
-    const id = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(id); return 0; }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [active, seconds, startKey]);
-
-  useEffect(() => {
-    if (active && timeLeft === 0 && seconds > 0) endRef.current();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
-
-  return timeLeft;
-};
-
-const fmtTime = (s: number) => {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-};
-
-/* ---------- render question card ---------- */
-const renderQCard = (q: any, idx: number, userAns: number | null, showAnswer: boolean, singleMode?: boolean) => {
-  const choicesHtml = q.choices.map((c: string, ci: number) => {
-    let cls = 'choice';
-    if (singleMode && showAnswer) {
-      if (ci === q.answer) cls += ' correct';
-      else if (ci === userAns) cls += ' wrong';
-    } else if (showAnswer) {
-      if (ci === q.answer) cls += ' correct';
-      else if (userAns !== null && userAns !== q.answer) cls += ' wrong';
-    } else if (userAns === ci) { cls += ' selected'; }
-    const clickable = showAnswer ? '' : (singleMode ? `onAnswer(${ci})` : `onAnswer(${idx},${ci})`);
-    return (
-      <button key={ci} className={cls} onClick={showAnswer ? undefined : () => {}} disabled={showAnswer}>
-        {String.fromCharCode(65 + ci)}. {c}
-      </button>
-    );
-  });
-  // We'll actually render inline — but the function below handles onclick via closure
-  return null; // handled inline below
-};
-
-/* ---------- main component ---------- */
-type Screen =
-  | 'home' | 'history'
-  | 'timedSubject' | 'timedSet' | 'timedCount' | 'timedTest' | 'timedResult'
-  | 'schoolSelect' | 'examYear' | 'examSubject' | 'examTest' | 'examResult'
-  | 'oneSubject' | 'oneSet' | 'oneCount' | 'oneTest' | 'oneSummary';
-
-export default function StudentM1Practice() {
-  const [screen, setScreen] = useState<Screen>('home');
-  const [subject, setSubject] = useState('random');
-  const [school, setSchool] = useState('');
-  const [year, setYear] = useState('');
-  const [count, setCount] = useState(0);
-  const [currentQuestions, setCurrentQuestions] = useState<any[]>([]);
-  const [userAnswers, setUserAnswers] = useState<(number | null)[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answered, setAnswered] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [mode, setMode] = useState<'timed'|'exam'|'one'>('timed');
-  const [selectedSet, setSelectedSet] = useState('1');
+export default function StudentM1PracticeSelect() {
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  const bankCount = loadBank().length;
+  // Load M.1 bank data from database
+  const bankQuestions: M1BankQuestion[] = useMemo(() => ensureBankData(), []);
+  const availableYears: string[] = useMemo(() => loadYearList(), []);
+  const availableSchools: string[] = useMemo(() => loadSchoolList(), []);
 
-  const goHome = useCallback(() => { setScreen('home'); setUserAnswers([]); setCurrentQuestions([]); setTimeLeft(0); }, []);
-  const goHistory = useCallback(() => setScreen('history'), []);
-  const openBank = useCallback(() => {
-    navigate('/student/quizzes');
-  }, [navigate]);
+  // Filter States
+  const [selectedSchool, setSelectedSchool] = useState<string>('all');
+  const [selectedSubject, setSelectedSubject] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedSet, setSelectedSet] = useState<string>('all');
+  const [questionCount, setQuestionCount] = useState<number>(10);
+  const [isTimer, setIsTimer] = useState<boolean>(true);
 
-  /* ---- helpers: get available sets for general (ทั่วไป) questions per subject ---- */
-  const getSetsForSubject = useCallback((subj: string): string[] => {
-    const bank = loadBank();
-    const sets = [...new Set(
-      bank
-        .filter((q: any) => q.school === GENERAL && q.year === GENERAL && (subj === 'random' || q.subject === subj))
-        .map((q: any) => q.set || '1')
-    )];
-    return sets.sort((a, b) => Number(a) - Number(b));
-  }, []);
+  // Modal State
+  const [activeModal, setActiveModal] = useState<'none' | 'stats' | 'leaderboard'>('none');
 
-  const getQuestionCountForSet = useCallback((subj: string, set: string): number => {
-    const bank = loadBank();
-    return bank.filter((q: any) =>
-      q.school === GENERAL && q.year === GENERAL && (q.set || '1') === set && (subj === 'random' || q.subject === subj)
-    ).length;
-  }, []);
+  // Exam States
+  const [examState, setExamState] = useState<'setup' | 'testing' | 'result'>('setup');
+  const [examQuestions, setExamQuestions] = useState<M1BankQuestion[]>([]);
+  const [currentQIndex, setCurrentQIndex] = useState<number>(0);
+  const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
 
-  /* ---- helpers ---- */
-  const startTimedTest = useCallback((subj: string, cnt: number) => {
-    const qs = randomQuestions(subj, cnt, selectedSet);
-    if (qs.length === 0) { alert('ยังไม่มีข้อสอบในคลังสำหรับวิชานี้/ชุดนี้ กรุณาเพิ่มข้อมูลที่หน้าคลังข้อสอบก่อน'); return; }
-    setCurrentQuestions(qs);
-    setUserAnswers(new Array(qs.length).fill(null));
-    setSubject(subj);
-    setMode('timed');
-    setTimerStartKey(k => k + 1);
-    setScreen('timedTest');
-  }, []);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startExamTest = useCallback((sc: string, yr: string, subj: string) => {
-    const bank = loadBank();
-    const qs = bank.filter((q: any) => q.school === sc && q.year === yr && q.subject === subj).map((q: any) => ({ ...q }));
-    if (qs.length === 0) { alert('ยังไม่มีข้อสอบสำหรับเงื่อนไขนี้'); return; }
-    setCurrentQuestions(qs);
-    setUserAnswers(new Array(qs.length).fill(null));
-    setSchool(sc); setYear(yr); setSubject(subj);
-    setMode('exam');
-    setTimerStartKey(k => k + 1);
-    setScreen('examTest');
-  }, []);
+  // History Persistence
+  const histKey = `scitech_m1_history_${user?.id ?? 0}`;
 
-  const startOneTest = useCallback((subj: string, cnt: number) => {
-    const qs = randomQuestions(subj, cnt, selectedSet);
-    if (qs.length === 0) { alert('ยังไม่มีข้อสอบในคลังสำหรับวิชานี้/ชุดนี้ กรุณาเพิ่มข้อมูลที่หน้าคลังข้อสอบก่อน'); return; }
-    setCurrentQuestions(qs);
-    setUserAnswers(new Array(qs.length).fill(null));
-    setCurrentIndex(0);
-    setAnswered(false);
-    setSubject(subj);
-    setMode('one');
-    setTimerStartKey(k => k + 1);
-    setScreen('oneTest');
-  }, []);
-
-  const selectTimedAnswer = useCallback((qIdx: number, choiceIdx: number) => {
-    setUserAnswers(prev => { const n = [...prev]; n[qIdx] = choiceIdx; return n; });
-  }, []);
-
-  const answerOne = useCallback((choiceIdx: number) => {
-    setUserAnswers(prev => { const n = [...prev]; n[currentIndex] = choiceIdx; return n; });
-    setAnswered(true);
-  }, [currentIndex]);
-
-  const nextOne = useCallback(() => {
-    if (currentIndex + 1 >= currentQuestions.length) {
-      // Submit
-      const score = currentQuestions.reduce((s, q, i) => s + (userAnswers[i] === q.answer ? 1 : 0), 0);
-      saveHistory({ mode: '📝 ทำทีละชุด', subject: subjectInfo[subject].name, score, total: currentQuestions.length, date: nowStr() });
-      setScreen('oneSummary');
-    } else {
-      setCurrentIndex(i => i + 1);
-      setAnswered(false);
+  const loadHistory = useCallback((): HistoryEntry[] => {
+    try {
+      const raw = localStorage.getItem(histKey) || localStorage.getItem(HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
     }
-  }, [currentIndex, currentQuestions, userAnswers, subject]);
+  }, [histKey]);
 
-  const submitTimedTest = useCallback(() => {
-    const score = currentQuestions.reduce((s, q, i) => s + (userAnswers[i] === q.answer ? 1 : 0), 0);
-    saveHistory({ mode: '⏱️ จับเวลา', subject: subjectInfo[subject].name, score, total: currentQuestions.length, date: nowStr() });
-    setScreen('timedResult');
-  }, [currentQuestions, userAnswers, subject]);
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, [loadHistory]);
 
-  const submitExamTest = useCallback(() => {
-    const score = currentQuestions.reduce((s, q, i) => s + (userAnswers[i] === q.answer ? 1 : 0), 0);
-    saveHistory({ mode: `🏫 ${school} (พ.ศ.${year})`, subject: subjectInfo[subject].name, score, total: currentQuestions.length, date: nowStr() });
-    setScreen('examResult');
-  }, [currentQuestions, userAnswers, school, year, subject]);
-
-  /* ---- timer setup ---- */
-  const [timerStartKey, setTimerStartKey] = useState(0);
-  const isTesting = (screen === 'timedTest' || screen === 'examTest') && currentQuestions.length > 0;
-  const timedSeconds = mode === 'exam' ? 3600 : currentQuestions.length * 120;
-  const timerLeft = useTimer(isTesting, timedSeconds, timerStartKey, () => {
-    if (mode === 'timed') submitTimedTest();
-    else if (mode === 'exam') submitExamTest();
-  });
-
-  /* ---- navigation ---- */
-  const goTimedSubject = () => { setSubject('random'); setScreen('timedSubject'); };
-  const goTimedSet = (subj: string) => { setSubject(subj); setScreen('timedSet'); };
-  const goTimedCount = (subj: string) => { setSubject(subj); setScreen('timedCount'); };
-  const goSchoolSelect = () => setScreen('schoolSelect');
-  const goExamYear = (sc: string) => { setSchool(sc); setScreen('examYear'); };
-  const goExamSubject = (sc: string, yr: string) => { setSchool(sc); setYear(yr); setScreen('examSubject'); };
-  const goOneSubject = () => setScreen('oneSubject');
-  const goOneSet = (subj: string) => { setSubject(subj); setScreen('oneSet'); };
-  const goOneCount = (subj: string) => { setSubject(subj); setScreen('oneCount'); };
-
-  /* ---- derived data ---- */
-  const availableSchools = (): string[] => {
-    return loadSchoolList().filter((s: string) => s !== GENERAL);
-  };
-  const availableYears = (sc: string): string[] => {
-    return loadYearList().filter((y: string) => y !== GENERAL);
-  };
-  const availableSubjects = (sc: string, yr: string): string[] => {
-    const bank = loadBank();
-    return [...new Set(bank.filter((q: any) => q.school === sc && q.year === yr).map((q: any) => q.subject))];
+  const saveHistoryEntry = (entry: HistoryEntry) => {
+    try {
+      const list = loadHistory();
+      const updated = [entry, ...list].slice(0, 50);
+      localStorage.setItem(histKey, JSON.stringify(updated));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      setHistory(updated);
+    } catch { /* ignore */ }
   };
 
-  /* ---------- RENDER ---------- */
-  const render = () => {
-    const app: React.ReactNode = <div className="m1-exam-app"><div className="card">
-      {/* ========== HOME ========== */}
-      {screen === 'home' && (
-        <>
-          <h1>🎒 ระบบฝึกทำข้อสอบเข้า ม.1</h1>
-          <p className="subtitle">ข้อสอบเข้า ม.1 ครอบคลุมทุกโรงเรียนดัง
-          <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-            <span style={{ 
-              background: '#e0e7ff', 
-              color: '#3730a3', 
-              fontSize: '12px', 
-              fontWeight: 800, 
-              padding: '4px 12px', 
-              borderRadius: '20px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <span>จำนวนข้อสอบเข้า ม.1 ทั้ ({bankCount} ข้อ)</span>
-            </span>
-          </div>
-          </p>
-          {bankCount === 0 && (
-            <div className="empty-state">
-              <div className="icon">📭</div>
-              ยังไม่มีข้อสอบในระบบ<br />
-              <span style={{ fontSize: '14px' }}>กรุณาเพิ่มข้อมูลจากหน้า "ระบบจัดการข้อมูลข้อสอบเข้า ม.1" ก่อนเริ่มใช้งาน</span>
-            </div>
-          )}
-          <div className="grid">
-            <button className="btn" onClick={goTimedSubject}><span className="icon">⏱️</span>ทดสอบจับเวลา</button>
-            <button className="btn btn-secondary" onClick={goSchoolSelect}><span className="icon">🏫</span>ข้อสอบจริงโรงเรียนดัง</button>
-            <button className="btn btn-pink" onClick={goOneSubject}><span className="icon">📝</span>ทำทีละชุด</button>
-            <button className="btn btn-gold" onClick={goHistory}><span className="icon">📊</span>ประวัติคะแนน</button>
-          </div>
-          <div className="bank-link" style={{ textAlign: 'center', marginTop: '18px' }}>
-            <button className="btn btn-outline" style={ { display: 'inline-flex', flexDirection: 'row', padding: '12px 20px', fontSize: '13px', fontWeight: 'bold' } } onClick={openBank}>
-              📝 กลับสู่หน้าลานประลองข้อสอบ
-            </button>
-          </div>
-        </>
-      )}
+  const clearHistory = () => {
+    if (window.confirm('ต้องการลบประวัติการทำข้อสอบทั้งหมดหรือไม่?')) {
+      localStorage.removeItem(histKey);
+      localStorage.removeItem(HISTORY_KEY);
+      setHistory([]);
+    }
+  };
 
-      {/* ========== HISTORY ========== */}
-      {screen === 'history' && (
-        <>
-          <button className="back-btn" onClick={goHome}>← กลับ</button>
-          <h1>📊 ประวัติการทำข้อสอบ</h1>
-          <p className="subtitle">ผลคะแนนล่าสุด {getHistory().length} รายการ</p>
-          {getHistory().length === 0 ? (
-            <div className="empty-state"><div className="icon">🗒️</div>ยังไม่มีประวัติการทำข้อสอบ</div>
-          ) : (
-            getHistory().map((h: any, i: number) => {
-              const pct = Math.round((h.score / h.total) * 100);
-              return (
-                <div key={i} className="history-item">
-                  <div className="hi-left">
-                    <span className="hi-subj">{badgeFor(pct)} {h.subject} — {h.mode}</span>
-                    <span className="hi-date">{h.date}</span>
+  // School Options Extraction
+  const schoolOptions = useMemo(() => {
+    const set = new Set<string>(availableSchools);
+    bankQuestions.forEach(q => {
+      if (q.school && q.school !== 'ทั่วไป') {
+        set.add(q.school);
+      }
+    });
+    return Array.from(set).filter(s => s !== 'ทั่วไป');
+  }, [bankQuestions, availableSchools]);
+
+  // Set Options Extraction
+  const setOptions = useMemo(() => {
+    const set = new Set<string>();
+    bankQuestions.forEach(q => {
+      const matchSchool = selectedSchool === 'all' || q.school === selectedSchool;
+      const matchSubj = selectedSubject === 'all' || q.subject === selectedSubject;
+      const matchYear = selectedYear === 'all' || q.year === selectedYear;
+      if (matchSchool && matchSubj && matchYear && q.set) {
+        set.add(q.set);
+      }
+    });
+    return Array.from(set).sort((a, b) => Number(a) - Number(b));
+  }, [bankQuestions, selectedSchool, selectedSubject, selectedYear]);
+
+  // Filter Pool
+  const filteredPool = useMemo(() => {
+    return bankQuestions.filter(q => {
+      const matchSchool = selectedSchool === 'all' || q.school === selectedSchool;
+      const matchSubj = selectedSubject === 'all' || q.subject === selectedSubject;
+      const matchYear = selectedYear === 'all' || q.year === selectedYear;
+      const matchSet = selectedSet === 'all' || q.set === selectedSet;
+      return matchSchool && matchSubj && matchYear && matchSet;
+    });
+  }, [bankQuestions, selectedSchool, selectedSubject, selectedYear, selectedSet]);
+
+  // Sync count on pool update
+  useEffect(() => {
+    if (filteredPool.length > 0) {
+      if (questionCount > filteredPool.length || questionCount <= 0) {
+        setQuestionCount(Math.min(10, filteredPool.length));
+      }
+    } else {
+      setQuestionCount(0);
+    }
+  }, [filteredPool.length]);
+
+  // Summary Text Labels
+  const getSchoolLabel = () => selectedSchool === 'all' ? 'สุ่มทุกโรงเรียน' : selectedSchool;
+  const getSubjectLabel = (subjKey = selectedSubject) => {
+    if (subjKey === 'all') return 'สุ่มทุกวิชา';
+    const info: Record<string, string> = {
+      science: 'วิทยาศาสตร์',
+      math: 'คณิตศาสตร์',
+      thai: 'ภาษาไทย',
+      english: 'ภาษาอังกฤษ',
+      social: 'สังคมศึกษา',
+    };
+    return info[subjKey] || subjKey;
+  };
+  const getYearLabel = () => selectedYear === 'all' ? 'สุ่มทุกปี' : `ปี ${selectedYear}`;
+  const getSetLabel = () => selectedSet === 'all' ? 'สุ่มทุกชุด' : `ชุดที่ ${selectedSet}`;
+
+  const liveSummaryText = `${getSchoolLabel()} / ${getSubjectLabel()} / ${getYearLabel()} / ${getSetLabel()} / ${questionCount} ข้อ / ${isTimer ? 'จับเวลา' : 'ไม่จับเวลา'}`;
+
+  // Start Exam Action
+  const handleStartExam = () => {
+    if (filteredPool.length === 0) {
+      alert('ไม่มีข้อสอบในเงื่อนไขที่เลือก กรุณาเลือกเงื่อนไขใหม่');
+      return;
+    }
+    const targetCount = Math.max(1, questionCount);
+
+    const shuffled = [...filteredPool].sort(() => Math.random() - 0.5);
+    let selectedQ: M1BankQuestion[] = [];
+    while (selectedQ.length < targetCount) {
+      selectedQ = selectedQ.concat(shuffled);
+    }
+    selectedQ = selectedQ.slice(0, targetCount);
+
+    setExamQuestions(selectedQ);
+    setUserAnswers({});
+    setCurrentQIndex(0);
+
+    if (isTimer) {
+      setTimeLeft(selectedQ.length * 120); // 2 นาทีต่อข้อ
+    } else {
+      setTimeLeft(0);
+    }
+
+    setExamState('testing');
+  };
+
+  // Timer Effect
+  useEffect(() => {
+    if (examState !== 'testing' || !isTimer) return;
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          handleFinishExam();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [examState, isTimer]);
+
+  // Finish Exam Action
+  const handleFinishExam = () => {
+    // 1. ตรวจสอบข้อที่ยังไม่ได้ตอบ
+    const unansweredIndices: number[] = [];
+    examQuestions.forEach((_, idx) => {
+      if (userAnswers[idx] === undefined) {
+        unansweredIndices.push(idx + 1);
+      }
+    });
+
+    // 2. หากทำไม่ครบทุกข้อ ให้ย้ายไปยังข้อแรกที่ยังไม่ทำ พร้อมแจ้งเตือน alert
+    if (unansweredIndices.length > 0) {
+      const firstUnansweredIndex = unansweredIndices[0] - 1;
+      setCurrentQIndex(firstUnansweredIndex);
+
+      alert(
+        `⚠️ กรุณาตอบข้อสอบให้ครบทุกข้อก่อนส่ง!\n\nข้อที่ยังไม่ได้ทำ: ข้อ ${unansweredIndices.join(', ')}`
+      );
+      return;
+    }
+
+    // 3. เมื่อตอบครบทุกข้อ นำเข้าสู่กระบวนการตรวจข้อสอบ
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    const total = examQuestions.length;
+    let score = 0;
+    examQuestions.forEach((q, idx) => {
+      if (userAnswers[idx] === q.answer) {
+        score++;
+      }
+    });
+
+    const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+    const entry: HistoryEntry = {
+      id: Date.now().toString(),
+      date: dateStr,
+      summary: liveSummaryText,
+      subject: getSubjectLabel(),
+      score,
+      total,
+      percentage: pct,
+      isTimer,
+    };
+
+    saveHistoryEntry(entry);
+    setExamState('result');
+  };
+
+  const getBadge = (pct: number) => pct >= 90 ? '🏆' : pct >= 70 ? '🥇' : pct >= 50 ? '🥈' : '📖';
+  const getComment = (pct: number) => {
+    if (pct >= 90) return 'ยอดเยี่ยมมาก! เก่งสุดๆ ⭐';
+    if (pct >= 70) return 'ดีมาก! เกือบสมบูรณ์แบบแล้ว 👍';
+    if (pct >= 50) return 'ทำได้ดี ฝึกฝนเพิ่มอีกนิดนะ 💪';
+    return 'ไม่เป็นไร ลองฝึกทำเพิ่มอีกครั้ง! ✌️';
+  };
+  const fmtTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // Score stats summary for leaderboard
+  const topScores = useMemo(() => {
+    return [...history].sort((a, b) => b.percentage - a.percentage).slice(0, 10);
+  }, [history]);
+
+  return (
+    <div className="st-page min-h-screen">
+      <style>{STUDENT_THEME_CSS}</style>
+      <MobileHeader title="ตะลุยโจทย์ เข้า ม.1" />
+      <StudentSidebar />
+
+      <main className="md:ml-20 lg:ml-64 pt-16 md:pt-6 pb-28 md:pb-12 px-3.5 md:px-6 transition-all">
+        <div className="max-w-2xl mx-auto">
+
+          {/* ==================== SETUP VIEW ==================== */}
+          {examState === 'setup' && (
+            <>
+              {/* Back to Arena Button */}
+              <div className="mb-4">
+                <button
+                  type="button"
+                  onClick={() => navigate('/student/quizzes')}
+                  className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-slate-700 px-4 py-2 rounded-2xl font-bold border-2 border-slate-200 shadow-sm hover:bg-slate-50 transition"
+                >
+                  <span>⬅️ กลับสู่ลานประลองข้อสอบ</span>
+                </button>
+              </div>
+
+              {/* 1. Header */}
+              <div className="text-center mb-8">
+                <h1 className="text-3xl md:text-4xl font-black text-blue-600 drop-shadow-sm flex items-center justify-center gap-2">
+                  <span>🚀 ตะลุยโจทย์ ม.1 สนุกคิด!</span>
+                </h1>
+              </div>
+
+              {/* 2. Shortcut Buttons */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal('stats')}
+                  className="py-4 bg-yellow-400 text-white font-black rounded-3xl shadow-[0_6px_0_#d97706] transition hover:scale-[1.02] active:translate-y-1 flex items-center justify-center gap-2"
+                >
+                  <span>📊 สถิติของหนู</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveModal('leaderboard')}
+                  className="py-4 bg-pink-400 text-white font-black rounded-3xl shadow-[0_6px_0_#be185d] transition hover:scale-[1.02] active:translate-y-1 flex items-center justify-center gap-2"
+                >
+                  <span>🏆 ตารางอันดับ</span>
+                </button>
+              </div>
+
+              {/* 3. Dashboard */}
+              <div className="bg-indigo-500 text-white p-6 rounded-[2rem] shadow-xl mb-6 border-b-8 border-indigo-700 text-center">
+                <p className="text-indigo-100 font-bold">คลังข้อสอบทั้งหมดในระบบ</p>
+                <h2 className="text-5xl font-black mt-1">
+                  {filteredPool.length} <span className="text-2xl font-normal opacity-80">ข้อ</span>
+                </h2>
+                {filteredPool.length < bankQuestions.length && (
+                  <p className="text-xs text-indigo-200 mt-2 font-medium">
+                    (จากข้อสอบทั้งหมด {bankQuestions.length} ข้อในฐานข้อมูล)
+                  </p>
+                )}
+              </div>
+
+              {/* 4. Filter Zone */}
+              <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-8 border-4 border-white">
+                <h2 className="text-xl font-black text-slate-700 mb-6 text-center">⚙️ เลือกเงื่อนไขการสอบ</h2>
+
+                <div className="space-y-6">
+                  {/* Dropdowns Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="school" className="text-xs font-black text-slate-400 uppercase ml-2 block mb-1">
+                        โรงเรียน
+                      </label>
+                      <select
+                        id="school"
+                        value={selectedSchool}
+                        onChange={(e) => setSelectedSchool(e.target.value)}
+                        className="w-full p-4 bg-slate-100 rounded-2xl font-bold text-slate-700 border-2 border-slate-200 focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="all">สุ่มทุกโรงเรียน</option>
+                        <option value="ทั่วไป">ทั่วไป</option>
+                        {schoolOptions.filter(sch => sch !== 'ทั่วไป').map(sch => (
+                          <option key={sch} value={sch}>{sch}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label htmlFor="subject" className="text-xs font-black text-slate-400 uppercase ml-2 block mb-1">
+                        วิชา
+                      </label>
+                      <select
+                        id="subject"
+                        value={selectedSubject}
+                        onChange={(e) => setSelectedSubject(e.target.value)}
+                        className="w-full p-4 bg-slate-100 rounded-2xl font-bold text-slate-700 border-2 border-slate-200 focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="all">สุ่มทุกวิชา</option>
+                        <option value="science">🔬 วิทยาศาสตร์</option>
+                        <option value="math">➗ คณิตศาสตร์</option>
+                        <option value="thai">🇹🇭 ภาษาไทย</option>
+                        <option value="english">🇬🇧 ภาษาอังกฤษ</option>
+                        <option value="social">🌍 สังคมศึกษา</option>
+                      </select>
+                    </div>
                   </div>
-                  <span className="hi-score">{h.score}/{h.total} ({pct}%)</span>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="year" className="text-xs font-black text-slate-400 uppercase ml-2 block mb-1">
+                        ปี พ.ศ.
+                      </label>
+                      <select
+                        id="year"
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(e.target.value)}
+                        className="w-full p-4 bg-slate-100 rounded-2xl font-bold text-slate-700 border-2 border-slate-200 focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="all">สุ่มทุกปี</option>
+                        <option value="ทั่วไป">ทั่วไป</option>
+                        {availableYears.filter(y => y !== 'ทั่วไป').map(y => (
+                          <option key={y} value={y}>{`พ.ศ. ${y}`}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label htmlFor="set" className="text-xs font-black text-slate-400 uppercase ml-2 block mb-1">
+                        ชุดข้อสอบ
+                      </label>
+                      <select
+                        id="set"
+                        value={selectedSet}
+                        onChange={(e) => setSelectedSet(e.target.value)}
+                        className="w-full p-4 bg-slate-100 rounded-2xl font-bold text-slate-700 border-2 border-slate-200 focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="all">สุ่มทุกชุด</option>
+                        {setOptions.map(st => (
+                          <option key={st} value={st}>ชุดที่ {st}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* ปุ่มลัดจำนวนข้อ */}
+                  <div>
+                    <label htmlFor="count" className="text-xs font-black text-slate-400 uppercase ml-2 mb-2 block">
+                      จำนวนข้อที่ต้องการ
+                    </label>
+                    <div className="grid grid-cols-5 gap-2 mb-3">
+                      {[10, 15, 20, 25].map(num => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setQuestionCount(num)}
+                          className={`py-3 rounded-2xl font-black transition ${
+                            questionCount === num
+                              ? 'bg-blue-500 text-white shadow-md'
+                              : 'bg-slate-100 text-slate-600 hover:bg-blue-100'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setQuestionCount(filteredPool.length > 0 ? filteredPool.length : 10)}
+                        className={`py-3 rounded-2xl font-black transition ${
+                          questionCount === filteredPool.length && filteredPool.length > 0
+                            ? 'bg-blue-500 text-white shadow-md'
+                            : 'bg-slate-100 text-slate-600 hover:bg-blue-100'
+                        }`}
+                      >
+                        ทั้งหมด
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      id="count"
+                      min={1}
+                      max={Math.max(1, filteredPool.length)}
+                      value={questionCount || ''}
+                      onChange={(e) => setQuestionCount(parseInt(e.target.value, 10) || 0)}
+                      className="w-full p-4 bg-slate-100 rounded-2xl font-bold text-slate-700 border-2 border-slate-200 focus:outline-none focus:border-blue-400"
+                      placeholder="ระบุจำนวนข้อ..."
+                    />
+                  </div>
+
+                  {/* โหมดจับเวลา */}
+                  <div>
+                    <span className="text-xs font-black text-slate-400 uppercase ml-2 mb-2 block">
+                      โหมดการสอบ
+                    </span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setIsTimer(true)}
+                        className={`py-4 rounded-2xl font-black border-2 transition ${
+                          isTimer
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-md'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        ⏱️ จับเวลา (2 นาที/ข้อ)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsTimer(false)}
+                        className={`py-4 rounded-2xl font-black border-2 transition ${
+                          !isTimer
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-md'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        🎯 ไม่จับเวลา
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live Summary */}
+                  <div className="bg-sky-100 p-6 rounded-[2rem] text-center border-2 border-dashed border-sky-300">
+                    <p className="text-sky-600 font-bold mb-1">สรุปการตั้งค่า:</p>
+                    <p className="font-black text-base md:text-lg text-sky-800 break-words">
+                      {liveSummaryText}
+                    </p>
+                  </div>
+
+                  {/* Start Exam Button */}
+                  <button
+                    type="button"
+                    onClick={handleStartExam}
+                    disabled={filteredPool.length === 0}
+                    className={`w-full py-5 text-white font-black text-xl rounded-full transition shadow-[0_8px_0_#15803d] ${
+                      filteredPool.length > 0
+                        ? 'bg-green-500 hover:translate-y-1 hover:scale-[1.01] active:translate-y-2 cursor-pointer'
+                        : 'bg-slate-400 opacity-60 cursor-not-allowed shadow-none'
+                    }`}
+                  >
+                    {filteredPool.length > 0 ? 'เริ่มทำข้อสอบเลย! 🚀' : 'ไม่มีข้อสอบในเงื่อนไขนี้'}
+                  </button>
                 </div>
-              );
-            })
+              </div>
+            </>
           )}
-          {getHistory().length > 0 && (
-            <button className="clear-history-btn" onClick={clearHistory}>🗑️ ลบประวัติทั้งหมด</button>
-          )}
-        </>
-      )}
 
-      {/* ========== TIMED: SUBJECT ========== */}
-      {screen === 'timedSubject' && (
-        <>
-          <button className="back-btn" onClick={goHome}>← กลับ</button>
-          <h1>⏱️ ทดสอบจับเวลา</h1>
-          <p className="subtitle">เลือกวิชาที่ต้องการทดสอบ</p>
-          <div className="grid">
-            {Object.entries(subjectInfo).map(([k, v]) => (
-              <button key={k} className="btn" onClick={() => goTimedSet(k)}>
-                <span className="icon">{v.icon}</span>{v.name}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ========== TIMED: SET (เลือกชุดข้อสอบ) ========== */}
-      {screen === 'timedSet' && (
-        <>
-          <button className="back-btn" onClick={goTimedSubject}>← กลับ</button>
-          <h1>{subjectInfo[subject].icon} {subjectInfo[subject].name}</h1>
-          <p className="subtitle">เลือกชุดข้อสอบ</p>
-          {getSetsForSubject(subject).length === 0 ? (
-            <div className="empty-state"><div className="icon">📭</div>ยังไม่มีข้อสอบในวิชานี้</div>
-          ) : (
-            <div className="grid">
-              {getSetsForSubject(subject).map(s => (
-                <button key={s} className="btn" onClick={() => { setSelectedSet(s); setScreen('timedCount'); }}>
-                  <span className="icon">📋</span>ชุดที่ {s}
-                  <small style={{opacity:.8,fontSize:'.8rem'}}>{getQuestionCountForSet(subject, s)} ข้อ</small>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ========== TIMED: COUNT ========== */}
-      {screen === 'timedCount' && (() => {
-        const totalInSet = getQuestionCountForSet(subject, selectedSet);
-        return (
-          <>
-            <button className="back-btn" onClick={() => setScreen('timedSet')}>← กลับ</button>
-            <h1>{subjectInfo[subject].icon} {subjectInfo[subject].name} — ชุดที่ {selectedSet}</h1>
-            <p className="subtitle">เลือกจำนวนข้อสอบ (ข้อละ 2 นาที)</p>
-            <div className="num-grid">
-              <button className="num-btn" style={{background:'linear-gradient(135deg,#43cea2,#185a9d)',color:'#fff',borderColor:'transparent',width:110}} onClick={() => startTimedTest(subject, totalInSet)}>
-                ทำทั้งหมด<br /><small>{totalInSet} ข้อ · {totalInSet * 2} นาที</small>
-              </button>
-              {[10,15,20,25,30].filter(n => n < totalInSet).map(n => (
-                <button key={n} className="num-btn" onClick={() => startTimedTest(subject, n)}>
-                  {n} ข้อ<br /><small>{n * 2} นาที</small>
-                </button>
-              ))}
-            </div>
-          </>
-        );
-      })()}
-
-      {/* ========== TIMED: TEST ========== */}
-      {screen === 'timedTest' && (
-        <>
-          <div className={`timer-bar ${timerLeft <= 60 ? 'warn' : ''}`}>
-            <span>⏱️ เวลาที่เหลือ</span>
-            <span className="timer-num">{fmtTime(timerLeft)}</span>
-          </div>
-          {currentQuestions.map((q, i) => (
-            <QuestionCard key={i} q={q} idx={i} userAns={userAnswers[i]} showAnswer={false}
-              onAnswer={mode === 'timed' ? selectTimedAnswer : answerOne}
-              singleMode={false}
-            />
-          ))}
-          <button className="btn btn-wide" style={{ background: 'linear-gradient(135deg,#43a047,#2e7d32)' }} onClick={submitTimedTest}>
-            ✅ ส่งข้อสอบ
-          </button>
-        </>
-      )}
-
-      {/* ========== TIMED RESULT ========== */}
-      {screen === 'timedResult' && (
-        <ResultScreen questions={currentQuestions} answers={userAnswers} onHome={goHome} />
-      )}
-
-      {/* ========== EXAM: SCHOOL SELECT ========== */}
-      {screen === 'schoolSelect' && (
-        <>
-          <button className="back-btn" onClick={goHome}>← กลับ</button>
-          <h1>🏫 ข้อสอบจริงโรงเรียนดัง</h1>
-          <p className="subtitle">เลือกโรงเรียน (จับเวลา 60 นาที)</p>
-          {availableSchools().length === 0 ? (
-            <div className="empty-state">
-              <div className="icon">📭</div>
-              ยังไม่มีข้อสอบผูกกับโรงเรียนใดในระบบ<br />
-              <span style={{ fontSize: '14px' }}>กรุณาเพิ่มผ่านหน้าคลังข้อสอบ</span>
-            </div>
-          ) : (
-            <div className="school-grid">
-              {availableSchools().map((s: string) => (
-                <button key={s} className="school-btn" onClick={() => goExamYear(s)}>
-                  <span className="icon">🏫</span>{s}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ========== EXAM: YEAR ========== */}
-      {screen === 'examYear' && (
-        <>
-          <button className="back-btn" onClick={goSchoolSelect}>← กลับ</button>
-          <div className="breadcrumb">🏫 {school}</div>
-          <h1>เลือกปี พ.ศ.</h1>
-          <p className="subtitle">เลือกปีของข้อสอบ</p>
-          <div className="year-grid">
-            {availableYears(school).map((y: string) => (
-              <button key={y} className="year-btn" onClick={() => goExamSubject(school, y)}>
-                พ.ศ. {y}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ========== EXAM: SUBJECT ========== */}
-      {screen === 'examSubject' && (
-        <>
-          <button className="back-btn" onClick={() => goExamYear(school)}>← กลับ</button>
-          <div className="breadcrumb">🏫 {school} • พ.ศ. {year}</div>
-          <h1>เลือกวิชา</h1>
-          <p className="subtitle">จับเวลา 60 นาที</p>
-          <div className="grid">
-            {availableSubjects(school, year).map((k: string) => (
-              <button key={k} className="btn" onClick={() => startExamTest(school, year, k)}>
-                <span className="icon">{subjectInfo[k].icon}</span>{subjectInfo[k].name}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ========== EXAM: TEST ========== */}
-      {screen === 'examTest' && (
-        <>
-          <div className="timer-bar">
-            <span>⏱️ เวลาที่เหลือ (60 นาที)</span>
-            <span className="timer-num">{fmtTime(timerLeft)}</span>
-          </div>
-          {currentQuestions.map((q, i) => (
-            <QuestionCard key={i} q={q} idx={i} userAns={userAnswers[i]} showAnswer={false}
-              onAnswer={selectTimedAnswer}
-              singleMode={false}
-            />
-          ))}
-          <button className="btn btn-wide" style={{ background: 'linear-gradient(135deg,#43a047,#2e7d32)' }} onClick={submitExamTest}>
-            ✅ ทำเสร็จทั้งหมด
-          </button>
-        </>
-      )}
-
-      {/* ========== EXAM RESULT ========== */}
-      {screen === 'examResult' && (
-        <ResultScreen questions={currentQuestions} answers={userAnswers} onHome={goHome} />
-      )}
-
-      {/* ========== ONE: SUBJECT ========== */}
-      {screen === 'oneSubject' && (
-        <>
-          <button className="back-btn" onClick={goHome}>← กลับ</button>
-          <h1>📝 ทำทีละชุด</h1>
-          <p className="subtitle">เลือกวิชาที่ต้องการทดสอบ</p>
-          <div className="grid">
-            {Object.entries(subjectInfo).map(([k, v]) => (
-              <button key={k} className="btn" onClick={() => goOneSet(k)}>
-                <span className="icon">{v.icon}</span>{v.name}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ========== ONE: SET ========== */}
-      {screen === 'oneSet' && (
-        <>
-          <button className="back-btn" onClick={goOneSubject}>← กลับ</button>
-          <h1>{subjectInfo[subject].icon} {subjectInfo[subject].name}</h1>
-          <p className="subtitle">เลือกชุดข้อสอบ</p>
-          {getSetsForSubject(subject).length === 0 ? (
-            <div className="empty-state"><div className="icon">📭</div>ยังไม่มีข้อสอบในวิชานี้</div>
-          ) : (
-            <div className="grid">
-              {getSetsForSubject(subject).map(s => (
-                <button key={s} className="btn btn-pink" onClick={() => { setSelectedSet(s); setScreen('oneCount'); }}>
-                  <span className="icon">📋</span>ชุดที่ {s}
-                  <small style={{opacity:.8,fontSize:'.8rem'}}>{getQuestionCountForSet(subject, s)} ข้อ</small>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ========== ONE: COUNT ========== */}
-      {screen === 'oneCount' && (() => {
-        const totalInSet = getQuestionCountForSet(subject, selectedSet);
-        return (
-          <>
-            <button className="back-btn" onClick={() => setScreen('oneSet')}>← กลับ</button>
-            <h1>{subjectInfo[subject].icon} {subjectInfo[subject].name} — ชุดที่ {selectedSet}</h1>
-            <p className="subtitle">เลือกจำนวนข้อสอบ ({totalInSet} ข้อในชุดนี้)</p>
-            <div className="num-grid">
-              <button className="num-btn" style={{background:'linear-gradient(135deg,#43cea2,#185a9d)',color:'#fff',borderColor:'transparent',width:110}} onClick={() => startOneTest(subject, totalInSet)}>
-                ทำทั้งหมด<br /><small>{totalInSet} ข้อ</small>
-              </button>
-              {[10,15,20,25,30].filter(n => n < totalInSet).map(n => (
-                <button key={n} className="num-btn" onClick={() => startOneTest(subject, n)}>
-                  {n} ข้อ
-                </button>
-              ))}
-            </div>
-          </>
-        );
-      })()}
-
-      {/* ========== ONE: TEST ========== */}
-      {screen === 'oneTest' && (
-        <>
-          <div className="progress">
-            <div className="progress-fill" style={{ width: `${(currentIndex / currentQuestions.length) * 100}%` }}></div>
-          </div>
-          <p style={{ textAlign: 'right', color: '#888', marginBottom: '10px', fontSize: '0.9rem' }}>
-            ข้อ {currentIndex + 1} / {currentQuestions.length}
-          </p>
-          {currentQuestions[currentIndex] && (
-            <QuestionCard
-              q={currentQuestions[currentIndex]}
-              idx={currentIndex}
-              userAns={userAnswers[currentIndex]}
-              showAnswer={answered}
-              onAnswer={answerOne}
-              singleMode={true}
-              onNext={answered ? nextOne : undefined}
-              nextLabel={currentIndex + 1 >= currentQuestions.length ? 'ดูสรุปผล' : 'ข้อถัดไป'}
-            />
-          )}
-        </>
-      )}
-
-      {/* ========== ONE SUMMARY ========== */}
-      {screen === 'oneSummary' && (
-        <>
-          {(() => {
-            const sc = currentQuestions.reduce((s,q,i)=>s+(userAnswers[i]===q.answer?1:0),0);
-            const pct = currentQuestions.length > 0 ? Math.round((sc/currentQuestions.length)*100) : 0;
-            return (
-              <>
-                <div className="score-box">
-                  <div className="badge">{badgeFor(pct)}</div>
-                  <div>🎉 เสร็จสิ้น!</div>
-                  <div className="big">{sc} / {currentQuestions.length}</div>
-                  <div>{commentFor(pct)}</div>
+          {/* ==================== TESTING VIEW ==================== */}
+          {examState === 'testing' && examQuestions.length > 0 && (
+            <div className="space-y-6">
+              {/* Header Bar: Timer & Progress */}
+              <div className="bg-white rounded-3xl p-5 shadow-xl border-2 border-slate-100 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="text-xs font-bold text-slate-400 block">วิชาเข้า ม.1</span>
+                  <span className="text-lg font-black text-slate-800">
+                    {getSubjectLabel(examQuestions[currentQIndex]?.subject)}
+                  </span>
                 </div>
-                <button className="btn btn-wide" onClick={goHome}>🏠 กลับหน้าหลัก</button>
-              </>
-            );
-          })()}
-        </>
-      )}
-    </div></div >;
-    return app;
-  };
 
-  return (
-    <div className="m1-exam-page">
-      <style>{`
-        .m1-exam-page { min-height:100vh; padding:20px; color:#2d2d2d;
-          background:linear-gradient(-45deg,#667eea,#764ba2,#f093fb,#43cea2); background-size:400% 400%;
-          animation:g 15s ease infinite; font-family:'Noto Sans Thai Looped',sans-serif; box-sizing:border-box; }
-        @keyframes g { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
-        .m1-exam-app { max-width:920px; margin:0 auto; }
-        .card { background:rgba(255,255,255,.92); backdrop-filter:blur(12px); border-radius:24px;
-          padding:32px; box-shadow:0 15px 40px rgba(0,0,0,.25); animation:fade .4s ease; }
-        @keyframes fade { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        h1 { text-align:center; color:#4a148c; margin-bottom:6px; font-size:1.9rem; font-weight:700; }
-        .subtitle { text-align:center; color:#777; margin-bottom:25px; font-weight:300; }
-        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px; }
-        .btn { background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; border:none; border-radius:16px;
-          padding:22px; font-size:1.05rem; font-weight:500; cursor:pointer; transition:.25s;
-          display:flex; flex-direction:column; align-items:center; gap:8px;
-          box-shadow:0 6px 16px rgba(102,126,234,.3); font-family:'Noto Sans Thai Looped',sans-serif; }
-        .btn:hover { transform:translateY(-6px) scale(1.03); box-shadow:0 10px 24px rgba(118,75,162,.5); }
-        .btn .icon { font-size:2.1rem; }
-        .btn-secondary { background:linear-gradient(135deg,#43cea2,#185a9d); box-shadow:0 6px 16px rgba(24,90,157,.3); }
-        .btn-pink { background:linear-gradient(135deg,#f093fb,#f5576c); box-shadow:0 6px 16px rgba(245,87,108,.3); }
-        .btn-gold { background:linear-gradient(135deg,#f7971e,#ffd200); box-shadow:0 6px 16px rgba(247,151,30,.3); }
-        .btn-outline { background:#fff; color:#764ba2; border:2px solid #764ba2; box-shadow:none; }
-        .btn-wide { width:100%; padding:16px; margin-top:15px; font-size:1.05rem; }
-        .back-btn { background:#eee; color:#555; padding:8px 18px; border-radius:12px; border:none;
-          cursor:pointer; margin-bottom:15px; font-family:'Noto Sans Thai Looped',sans-serif; transition:.2s; }
-        .back-btn:hover { background:#ddd; transform:translateX(-3px); }
-        .num-grid { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
-        .num-btn { width:85px; height:85px; border-radius:16px; border:2px solid #764ba2;
-          background:#fff; color:#764ba2; font-size:1.3rem; font-weight:600; cursor:pointer;
-          transition:.2s; font-family:'Noto Sans Thai Looped',sans-serif; }
-        .num-btn:hover { background:#764ba2; color:#fff; transform:scale(1.05); }
-        .timer-bar { position:sticky; top:10px; z-index:10; background:rgba(255,255,255,.95);
-          backdrop-filter:blur(8px); padding:14px 22px; border-radius:16px;
-          display:flex; justify-content:space-between; align-items:center;
-          box-shadow:0 6px 18px rgba(0,0,0,.15); margin-bottom:20px; }
-        .timer-bar.warn { background:#ffe0e0; animation:pulse 1s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
-        .timer-num { font-size:1.5rem; font-weight:700; color:#764ba2; }
-        .timer-bar.warn .timer-num { color:#d32f2f; }
-        .progress { height:10px; background:#eee; border-radius:8px; overflow:hidden; margin-bottom:20px; }
-        .progress-fill { height:100%; background:linear-gradient(90deg,#43cea2,#764ba2); transition:.3s; }
-        .qcard { border:1px solid #eee; border-radius:18px; padding:22px; margin-bottom:18px; background:#fff; }
-        .qnum { display:inline-block; background:linear-gradient(135deg,#667eea,#764ba2); color:#fff;
-          width:34px; height:34px; border-radius:50%; text-align:center; line-height:34px; margin-right:10px; font-weight:600; }
-        .qtext { font-size:1.1rem; margin-bottom:16px; font-weight:500; }
-        .choice { display:block; width:100%; text-align:left; padding:13px 18px; border-radius:12px;
-          border:2px solid #ddd; background:#fafafa; margin-bottom:10px; cursor:pointer; font-family:'Noto Sans Thai Looped',sans-serif; font-size:1rem; transition:.2s; }
-        .choice:hover { border-color:#764ba2; transform:translateX(3px); }
-        .choice.selected { border-color:#764ba2; background:#ede7f6; }
-        .choice.correct { border-color:#43a047; background:#e8f5e9; color:#2e7d32; font-weight:600; }
-        .choice.wrong { border-color:#e53935; background:#ffebee; color:#c62828; font-weight:600; }
-        .explain { background:#fff8e1; border-left:4px solid #ffb300; padding:14px 18px; border-radius:10px;
-          margin-top:12px; font-size:.95rem; color:#5d4037; }
-        .score-box { text-align:center; padding:30px; background:linear-gradient(135deg,#43cea2,#185a9d);
-          color:#fff; border-radius:20px; margin-bottom:22px; box-shadow:0 10px 24px rgba(24,90,157,.35); }
-        .score-box .badge { font-size:3rem; margin-bottom:8px; }
-        .score-box .big { font-size:2.6rem; font-weight:700; }
-        .school-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
-        .school-btn { background:linear-gradient(135deg,#ff9966,#ff5e62); color:#fff; border:none; border-radius:16px;
-          padding:22px; font-size:1.05rem; font-weight:600; cursor:pointer; transition:.25s;
-          display:flex; flex-direction:column; align-items:center; gap:6px;
-          box-shadow:0 6px 16px rgba(255,94,98,.3); font-family:'Noto Sans Thai Looped',sans-serif; }
-        .school-btn:hover { transform:translateY(-6px) scale(1.03); box-shadow:0 10px 24px rgba(255,94,98,.5); }
-        .school-btn .icon { font-size:2rem; }
-        .year-grid { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
-        .year-btn { padding:14px 22px; border-radius:14px; border:2px solid #764ba2; background:#fff;
-          color:#764ba2; font-weight:600; cursor:pointer; font-family:'Noto Sans Thai Looped',sans-serif; transition:.2s; }
-        .year-btn:hover { background:#764ba2; color:#fff; transform:scale(1.05); }
-        .history-item { display:flex; justify-content:space-between; align-items:center; background:#f8f7ff;
-          border-radius:14px; padding:14px 18px; margin-bottom:10px; border-left:5px solid #764ba2; }
-        .history-item .hi-left { display:flex; flex-direction:column; gap:2px; }
-        .history-item .hi-subj { font-weight:600; color:#4a148c; }
-        .history-item .hi-date { font-size:.82rem; color:#999; }
-        .history-item .hi-score { font-size:1.2rem; font-weight:700; color:#43a047; }
-        .empty-state { text-align:center; padding:40px 20px; color:#999; }
-        .empty-state .icon { font-size:3rem; margin-bottom:10px; }
-        .clear-history-btn { background:#ffebee; color:#c62828; border:none; padding:10px 18px; border-radius:10px;
-          cursor:pointer; font-family:'Noto Sans Thai Looped',sans-serif; margin-top:15px; }
-        .clear-history-btn:hover { background:#ffcdd2; }
-        .breadcrumb { text-align:center; color:#999; margin-bottom:10px; font-size:.9rem; }
-        .bank-link { text-align:center; margin-top:18px; }
-      `}</style>
-      {render()}
+                <div className="flex items-center gap-3">
+                  {isTimer ? (
+                    <div className={`px-4 py-2 rounded-2xl font-black text-lg ${
+                      timeLeft <= 60 ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-purple-100 text-purple-700'
+                    }`}>
+                      ⏱️ {fmtTime(timeLeft)}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-2xl font-black text-sm">
+                      🎯 ไม่จับเวลา
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('ต้องการออกจากการทำข้อสอบหรือไม่?')) {
+                        setExamState('setup');
+                      }
+                    }}
+                    className="px-3 py-2 bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-2xl font-bold text-sm transition"
+                  >
+                    ❌ ออก
+                  </button>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="bg-white rounded-2xl p-4 shadow-md border border-slate-100">
+                <div className="flex justify-between items-center text-xs font-black text-slate-500 mb-2">
+                  <span>ข้อที่ {currentQIndex + 1} จาก {examQuestions.length}</span>
+                  <span>ตอบแล้ว {Object.keys(userAnswers).length} / {examQuestions.length} ข้อ</span>
+                </div>
+                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-300 rounded-full"
+                    style={{ width: `${((currentQIndex + 1) / examQuestions.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Question Card */}
+              {(() => {
+                const q = examQuestions[currentQIndex];
+                const selectedChoice = userAnswers[currentQIndex];
+
+                return (
+                  <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-8 border-4 border-white space-y-6">
+                    {/* Tags */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                        ข้อที่ {currentQIndex + 1}
+                      </span>
+                      {q.school && q.school !== 'ทั่วไป' && (
+                        <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold">
+                          {q.school}
+                        </span>
+                      )}
+                      {q.year && (
+                        <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
+                          {q.year === 'ทั่วไป' ? 'ทั่วไป' : `ปี ${q.year}`}
+                        </span>
+                      )}
+                      {q.set && (
+                        <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
+                          ชุดที่ {q.set}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Question Text */}
+                    <MathText as="h2" className="text-lg md:text-xl font-black text-slate-800 leading-relaxed whitespace-pre-line">
+                      {q.q}
+                    </MathText>
+
+                    {/* Question Image if exists */}
+                    {q.q_image && (
+                      <div className="rounded-2xl overflow-hidden border border-slate-200 max-h-80 flex justify-center bg-slate-50 p-2">
+                        <img src={q.q_image} alt="โจทย์ข้อสอบ" className="max-h-72 object-contain" />
+                      </div>
+                    )}
+
+                    {/* Choices Grid */}
+                    <div className="space-y-3 pt-2">
+                      {q.choices.map((choice, cIdx) => {
+                        const isSelected = selectedChoice === cIdx;
+                        const choiceImg = q.choice_images?.[cIdx];
+
+                        return (
+                          <button
+                            key={cIdx}
+                            type="button"
+                            onClick={() => {
+                              setUserAnswers(prev => ({ ...prev, [currentQIndex]: cIdx }));
+                            }}
+                            className={`w-full p-4 rounded-2xl font-bold text-left border-2 transition flex items-start gap-3.5 ${
+                              isSelected
+                                ? 'bg-blue-500 text-white border-blue-600 shadow-md translate-x-1'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-sky-50 hover:border-sky-300'
+                            }`}
+                          >
+                            <span className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${
+                              isSelected ? 'bg-white text-blue-600' : 'bg-slate-200 text-slate-600'
+                            }`}>
+                              {String.fromCharCode(65 + cIdx)}
+                            </span>
+                            <div className="pt-1 flex-1">
+                              <MathText className="leading-normal text-sm md:text-base block whitespace-pre-line">
+                                {choice}
+                              </MathText>
+                              {choiceImg && (
+                                <img src={choiceImg} alt={`ตัวเลือก ${cIdx + 1}`} className="mt-2 max-h-32 rounded-lg" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Bottom Quick Navigation & Actions */}
+              <div className="bg-white rounded-3xl p-5 shadow-xl border-2 border-slate-100 space-y-4">
+                {/* Question Numbers Palette */}
+                <div className="flex flex-wrap gap-2 justify-center max-h-32 overflow-y-auto p-1">
+                  {examQuestions.map((_, idx) => {
+                    const isAnswered = userAnswers[idx] !== undefined;
+                    const isCurrent = currentQIndex === idx;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setCurrentQIndex(idx)}
+                        className={`w-10 h-10 rounded-xl font-bold text-xs transition border-2 ${
+                          isCurrent
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-300'
+                            : isAnswered
+                            ? 'bg-emerald-500 text-white border-emerald-600'
+                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                        }`}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Nav Buttons */}
+                <div className="flex items-center justify-between gap-4 pt-2">
+                  <button
+                    type="button"
+                    disabled={currentQIndex === 0}
+                    onClick={() => setCurrentQIndex(prev => prev - 1)}
+                    className="px-5 py-3 bg-slate-100 text-slate-700 rounded-2xl font-black text-sm hover:bg-slate-200 disabled:opacity-40 transition"
+                  >
+                    ⬅️ ข้อก่อนหน้า
+                  </button>
+
+                  {currentQIndex < examQuestions.length - 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentQIndex(prev => prev + 1)}
+                      className="px-6 py-3 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-600 transition shadow-md"
+                    >
+                      ข้อถัดไป ➡️
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleFinishExam}
+                      className="px-6 py-3 bg-green-500 text-white rounded-2xl font-black text-sm hover:bg-green-600 transition shadow-lg animate-bounce"
+                    >
+                      ✅ ส่งคำตอบ 🚀
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== RESULT VIEW ==================== */}
+          {examState === 'result' && (
+            <div className="space-y-6">
+              {/* Score Box */}
+              {(() => {
+                const total = examQuestions.length;
+                let score = 0;
+                examQuestions.forEach((q, idx) => {
+                  if (userAnswers[idx] === q.answer) score++;
+                });
+                const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+
+                return (
+                  <div className="bg-indigo-500 text-white p-8 rounded-[2.5rem] shadow-xl border-b-8 border-indigo-700 text-center space-y-3">
+                    <div className="text-6xl animate-bounce">{getBadge(pct)}</div>
+                    <h2 className="text-3xl font-black">สรุปผลคะแนนสอบเข้า ม.1</h2>
+                    <div className="text-5xl font-black my-2">
+                      {score} / {total} <span className="text-2xl font-normal opacity-90">ข้อ</span>
+                    </div>
+                    <p className="text-xl font-bold text-indigo-100">
+                      {getComment(pct)} ({pct}%)
+                    </p>
+
+                    <div className="pt-4 flex flex-wrap justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setExamState('setup')}
+                        className="px-6 py-3 bg-yellow-400 text-slate-900 font-black rounded-2xl shadow-md hover:bg-yellow-300 transition"
+                      >
+                        🏠 ทำข้อสอบชุดอื่น
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveModal('stats')}
+                        className="px-6 py-3 bg-white/20 text-white font-black rounded-2xl hover:bg-white/30 transition"
+                      >
+                        📊 สถิติของหนู
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Detailed Solutions */}
+              <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-8 border-4 border-white space-y-6">
+                <h3 className="text-xl font-black text-slate-800 text-center flex items-center justify-center gap-2">
+                  <span>📋 เฉลยข้อสอบอย่างละเอียด</span>
+                </h3>
+
+                <div className="space-y-6">
+                  {examQuestions.map((q, idx) => {
+                    const userAns = userAnswers[idx];
+                    const isCorrect = userAns === q.answer;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`p-5 rounded-3xl border-2 ${
+                          isCorrect ? 'bg-emerald-50/60 border-emerald-200' : 'bg-rose-50/60 border-rose-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm ${
+                            isCorrect ? 'bg-emerald-500' : 'bg-rose-500'
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <span className={`font-black text-sm ${isCorrect ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {isCorrect ? '✅ ตอบถูกต้อง' : '❌ ตอบผิด'}
+                          </span>
+                        </div>
+
+                        <MathText as="p" className="font-bold text-slate-800 mb-4 whitespace-pre-line">{q.q}</MathText>
+
+                        <div className="space-y-2 text-sm font-medium">
+                          {q.choices.map((c, ci) => {
+                            let choiceCls = 'bg-white text-slate-600 border-slate-200';
+                            if (ci === q.answer) {
+                              choiceCls = 'bg-emerald-500 text-white border-emerald-600 font-bold';
+                            } else if (ci === userAns && !isCorrect) {
+                              choiceCls = 'bg-rose-500 text-white border-rose-600 font-bold';
+                            }
+
+                            return (
+                              <div key={ci} className={`p-3 rounded-2xl border flex items-center gap-2 ${choiceCls}`}>
+                                <span className="font-black">{String.fromCharCode(65 + ci)}.</span>
+                                <span>{c}</span>
+                                {ci === q.answer && <span className="ml-auto text-xs font-black">✓ เฉลย</span>}
+                                {ci === userAns && ci !== q.answer && <span className="ml-auto text-xs font-black">✗ คำตอบของคุณ</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {(q.explain || q.explain_image) && (
+                          <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs md:text-sm text-amber-900 leading-relaxed space-y-2">
+                            <div>💡 <strong>คำอธิบาย:</strong> <MathText className="whitespace-pre-line">{q.explain || 'ไม่มีคำอธิบายเพิ่มเติม'}</MathText></div>
+                            {q.explain_image && (
+                              <img src={q.explain_image} alt="รูปอธิบาย" className="max-h-48 rounded-lg border border-amber-300" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
+
+      {/* ==================== MODAL: MY STATS ==================== */}
+      {activeModal === 'stats' && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] max-w-lg w-full p-6 md:p-8 shadow-2xl border-4 border-white max-h-[90vh] overflow-y-auto relative animate-fadeIn">
+            <button
+              type="button"
+              onClick={() => setActiveModal('none')}
+              className="absolute top-6 right-6 w-10 h-10 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-full font-bold flex items-center justify-center text-lg transition"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-2xl font-black text-slate-800 text-center mb-1">📊 สถิติของหนู</h3>
+            <p className="text-slate-500 text-xs font-bold text-center mb-6">ประวัติการทำข้อสอบเข้า ม.1 ทั้งหมด</p>
+
+            {history.length === 0 ? (
+              <div className="text-center py-10 text-slate-400">
+                <span className="text-4xl block mb-2">📋</span>
+                <p className="font-bold">ยังไม่มีประวัติการทำข้อสอบ</p>
+                <p className="text-xs">เริ่มทำข้อสอบเพื่อเก็บสถิตินะคะ!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {history.map((h) => (
+                  <div key={h.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{getBadge(h.percentage)}</span>
+                        <span className="font-black text-sm text-slate-800">{h.subject}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 font-medium">{h.date}</p>
+                      <p className="text-[11px] text-slate-400 font-medium truncate max-w-xs">{h.summary}</p>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-lg font-black text-blue-600 block">
+                        {h.score}/{h.total}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">
+                        ({h.percentage}%)
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="pt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={clearHistory}
+                    className="text-xs text-rose-500 hover:text-rose-700 font-bold underline transition"
+                  >
+                    🗑️ ลบประวัติทั้งหมด
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL: LEADERBOARD ==================== */}
+      {activeModal === 'leaderboard' && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] max-w-lg w-full p-6 md:p-8 shadow-2xl border-4 border-white max-h-[90vh] overflow-y-auto relative animate-fadeIn">
+            <button
+              type="button"
+              onClick={() => setActiveModal('none')}
+              className="absolute top-6 right-6 w-10 h-10 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-full font-bold flex items-center justify-center text-lg transition"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-2xl font-black text-slate-800 text-center mb-1">🏆 ตารางอันดับความเก่ง</h3>
+            <p className="text-slate-500 text-xs font-bold text-center mb-6">คะแนนสูงสุดของหนูในการสอบเข้า ม.1</p>
+
+            {topScores.length === 0 ? (
+              <div className="text-center py-10 text-slate-400">
+                <span className="text-4xl block mb-2">🏆</span>
+                <p className="font-bold">ยังไม่มีอันดับความเก่ง</p>
+                <p className="text-xs">ทำข้อสอบให้ได้คะแนนสูงๆ เพื่อติดอันดับนะคะ!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {topScores.map((h, idx) => (
+                  <div
+                    key={h.id}
+                    className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
+                      idx === 0
+                        ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-200'
+                        : idx === 1
+                        ? 'bg-slate-100 border-slate-300'
+                        : idx === 2
+                        ? 'bg-orange-50 border-orange-200'
+                        : 'bg-white border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm ${
+                        idx === 0
+                          ? 'bg-amber-400 text-white'
+                          : idx === 1
+                          ? 'bg-slate-400 text-white'
+                          : idx === 2
+                          ? 'bg-orange-400 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-sm text-slate-800">{h.subject}</span>
+                          <span className="text-xs">{getBadge(h.percentage)}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium">{h.date}</p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-lg font-black text-indigo-600 block">
+                        {h.percentage}%
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">
+                        {h.score}/{h.total} ข้อ
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
-  );
-}
-
-/* ---------- sub-components ---------- */
-function QuestionCard({ q, idx, userAns, showAnswer, onAnswer, singleMode, onNext, nextLabel }: {
-  q: any; idx: number; userAns: number | null; showAnswer: boolean;
-  onAnswer: (qIdx: number, ci: number) => void;
-  singleMode?: boolean; onNext?: () => void; nextLabel?: string;
-}) {
-  const choicesHtml = q.choices.map((c: string, ci: number) => {
-    let cls = 'choice';
-    if (singleMode && showAnswer) {
-      if (ci === q.answer) cls += ' correct';
-      else if (ci === userAns) cls += ' wrong';
-    } else if (showAnswer) {
-      if (ci === q.answer) cls += ' correct';
-      else if (userAns !== null && userAns !== q.answer) cls += ' wrong';
-    } else if (userAns === ci) { cls += ' selected'; }
-    return (
-      <button
-        key={ci}
-        className={cls}
-        disabled={showAnswer}
-        onClick={showAnswer ? undefined : () => onAnswer(idx, ci)}
-      >
-        {String.fromCharCode(65 + ci)}. {c}
-      </button>
-    );
-  });
-
-  return (
-    <div className="qcard">
-      <div className="qtext">
-        <span className="qnum">{idx + 1}</span>{q.q}
-      </div>
-      {q.q_image && <img src={q.q_image} alt="รูปคำถาม" style={{maxWidth:'100%',maxHeight:260,borderRadius:12,marginBottom:12,boxShadow:'0 4px 12px rgba(0,0,0,.1)'}} />}
-      {choicesHtml}
-      {showAnswer && (
-        <div className="explain">
-          💡 <b>เฉลย:</b> {q.choices[q.answer]}<br />{q.explain}
-          {q.explain_image && <img src={q.explain_image} alt="รูปเฉลย" style={{maxWidth:'100%',maxHeight:200,borderRadius:10,marginTop:10}} />}
-        </div>
-      )}
-      {singleMode && showAnswer && onNext && (
-        <div style={{ textAlign: 'center', marginTop: '16px' }}>
-          <button className="btn btn-wide" onClick={onNext}>➡️ {nextLabel || 'ข้อถัดไป'}</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ResultScreen({ questions, answers, onHome }: { questions: any[]; answers: (number|null)[]; onHome: () => void }) {
-  if (questions.length === 0) {
-    return (
-      <>
-        <div className="score-box">
-          <div className="badge">📭</div>
-          <div className="big">0 / 0</div>
-          <div>ยังไม่มีข้อสอบ</div>
-        </div>
-        <h1 style={{ fontSize: '1.3rem' }}>📋 เฉลยข้อสอบ</h1>
-        <div className="empty-state"><div className="icon">📭</div>ยังไม่มีข้อสอบในระบบ</div>
-        <button className="btn btn-wide" onClick={onHome}>🏠 กลับหน้าหลัก</button>
-      </>
-    );
-  }
-  const score = questions.reduce((s, q, i) => s + (answers[i] === q.answer ? 1 : 0), 0);
-  const pct = Math.round((score / questions.length) * 100);
-  return (
-    <>
-      <div className="score-box">
-        <div className="badge">{badgeFor(pct)}</div>
-        <div className="big">{score} / {questions.length}</div>
-        <div>{commentFor(pct)} ({pct}%)</div>
-      </div>
-      <h1 style={{ fontSize: '1.3rem' }}>📋 เฉลยข้อสอบ</h1>
-      {questions.map((q, i) => (
-        <QuestionCard key={i} q={q} idx={i} userAns={answers[i]} showAnswer={true} onAnswer={() => {}} singleMode={false} />
-      ))}
-      <button className="btn btn-wide" onClick={onHome}>🏠 กลับหน้าหลัก</button>
-    </>
   );
 }

@@ -1,6 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useState, useMemo, useCallback } from 'react';
 import { useAppStore } from '../store/AppContext';
+import MathText from '../components/MathText';
 import { ONET_SUBJECTS, M1_SUBJECTS } from '../types';
 import { STUDENT_THEME_CSS } from '../styles/studentTheme';
 
@@ -285,7 +286,7 @@ export default function StudentQuizPractice() {
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0">{idx + 1}</div>
                   <div>
-                    <p className="font-medium text-gray-800">{q.question_text}</p>
+                    <MathText as="p" className="font-medium text-gray-800 whitespace-pre-line">{q.question_text}</MathText>
                     {(q as any).subject && (
                       <span className="text-xs text-gray-400 mt-1 inline-block">วิชา: {(q as any).subject}</span>
                     )}
@@ -295,7 +296,7 @@ export default function StudentQuizPractice() {
                   {q.shuffledOptions.map((opt) => (
                     <button key={opt.label} onClick={() => handleAnswer(q.id, opt.label)} className={`w-full text-left p-3 rounded-lg border-2 transition-all flex items-center gap-3 ${answers[q.id] === opt.label ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
                       <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-bold flex-shrink-0 ${answers[q.id] === opt.label ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300'}`}>{opt.label}</div>
-                      <span className="text-sm">{opt.text}</span>
+                      <MathText className="text-sm whitespace-pre-line">{opt.text}</MathText>
                     </button>
                   ))}
                 </div>

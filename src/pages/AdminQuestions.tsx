@@ -7,7 +7,7 @@ import AdminSidebar from '../components/AdminSidebar';
 import MobileHeader from '../components/MobileHeader';
 import { M1BankContent } from './AdminQuestionsM1';
 import { getM1BankCount } from '../data/m1BankData';
-import AdminQuestionsONetBank from './AdminQuestionsONetBank';
+import { AdminQuestionsONetBank } from './AdminQuestionsONet';
 import { getOnetBankCount } from '../data/onetBankData';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 

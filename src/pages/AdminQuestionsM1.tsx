@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import MathText from '../components/MathText';
 import {
   QUESTION_KEY,
   SCHOOLS_KEY,
@@ -60,16 +61,17 @@ const parseAnswerIndex = (raw: string): number => {
   return -1;
 };
 
-
+/* ขึ้นบรรทัดใหม่: ใน CSV พิมพ์ \\n เพื่อขึ้นบรรทัดใหม่ เช่น "ข้อความ\\nบรรทัดสอง"
+   (ไม่แตะต้อง \\neq \\nu ฯลฯ — คำสั่ง LaTeX ที่ขึ้นต้นด้วย \\n ตามด้วยตัวอักษร) */
+const unescNewlines = (s: string) => String(s).replace(/\\n(?![a-zA-Z])/g, '\n');
+const escNewlines = (s: string) => String(s).replace(/\n/g, '\\n');
 
 /* ---------- component ---------- */
 export function M1BankContent() {
   const [bank, setBank] = useState<any[]>(() => ensureBankData());
-
   const [schools, setSchools] = useState<string[]>(() => loadSchoolList());
   const [years, setYears] = useState<string[]>(() => loadYearList());
 
-  // รีเฟรช schools/years ทุกครั้งที่มีการเปลี่ยนแปลง
   useEffect(() => {
     const onUpdate = () => {
       setSchools(loadSchoolList());
@@ -97,12 +99,6 @@ export function M1BankContent() {
     window.dispatchEvent(new Event('m1-bank-updated'));
   }, []);
 
-  // รีเฟรช schools/years เมื่อ component โหลด (กรณีมีข้อมูลจากหน้าอื่นเปลี่ยน)
-  useEffect(() => {
-    setSchools(loadSchoolList());
-    setYears(loadYearList());
-  }, []);
-
   /* ----- tabs / modal ----- */
   type Tab = 'import' | 'manage' | 'list';
   const [tab, setTab] = useState<Tab>('import');
@@ -110,10 +106,36 @@ export function M1BankContent() {
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importOk, setImportOk] = useState<boolean | null>(null);
 
+  /* ----- state สำหรับฟอร์มแก้ไข ----- */
+  const [editForm, setEditForm] = useState<{
+    school: string;
+    year: string;
+    set: string;
+    subject: string;
+    q: string;
+    choices: string[];
+    answer: number;
+    explain: string;
+    q_image?: string;
+    choice_images: string[];
+    explain_image?: string;
+  }>({
+    school: GENERAL,
+    year: GENERAL,
+    set: '1',
+    subject: 'science',
+    q: '',
+    choices: ['', '', '', ''],
+    answer: 0,
+    explain: '',
+    choice_images: ['', '', '', ''],
+  });
+
   /* ----- filters (list tab) ----- */
   const [fSchool, setFSchool] = useState('');
   const [fYear, setFYear] = useState('');
   const [fSubject, setFSubject] = useState('');
+  const [fSet, setFSet] = useState('');
 
   /* ===== CSV ===== */
   const handleCSVUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,7 +148,6 @@ export function M1BankContent() {
         if (rows.length === 0) { setImportMsg('ไฟล์ว่างเปล่า'); setImportOk(false); return; }
         let start = 0;
         const header = rows[0]?.map(c => c.trim().toLowerCase()) || [];
-        // รองรับทั้ง CSV แบบเก่า (school,year,subject,...) และแบบใหม่ (school,year,set,subject,...)
         const hasSetCol = header.includes('set');
         if (header.includes('school')) start = 1;
         let ok = 0, fail = 0;
@@ -136,7 +157,6 @@ export function M1BankContent() {
         for (let i = start; i < rows.length; i++) {
           const r = rows[i];
           if (hasSetCol) {
-            // แบบใหม่: school, year, set, subject, question, choice1-4, answer, explain
             if (r.length < 10) continue;
             const isBlank = r.slice(0, 10).every((c) => !c?.trim());
             if (isBlank) continue;
@@ -144,26 +164,25 @@ export function M1BankContent() {
             const year = (r[1] || GENERAL).trim() || GENERAL;
             const set = (r[2] || '1').trim() || '1';
             const subject = (r[3] || '').trim().toLowerCase();
-            const question = r[4]?.trim() || '';
-            const c1 = r[5]?.trim() || '', c2 = r[6]?.trim() || '', c3 = r[7]?.trim() || '', c4 = r[8]?.trim() || '';
+            const question = unescNewlines(r[4] || '').trim();
+            const c1 = unescNewlines(r[5] || '').trim(), c2 = unescNewlines(r[6] || '').trim(), c3 = unescNewlines(r[7] || '').trim(), c4 = unescNewlines(r[8] || '').trim();
             const answerIdx = parseAnswerIndex(r[9]);
-            const explain = r[10]?.trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
+            const explain = unescNewlines(r[10] || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
             if (!subjectInfo[subject] || !question || answerIdx === -1 || !c1 || !c2 || !c3 || !c4) { fail++; continue; }
             if (nextSchools.indexOf(school) === -1) nextSchools.push(school);
             if (nextYears.indexOf(year) === -1) nextYears.push(year);
             nextBank.push({ id: 'c_m1_' + Date.now() + '_' + i, isDefault: false, school, year, set, subject, q: question, choices: [c1, c2, c3, c4], answer: answerIdx, explain });
           } else {
-            // แบบเก่า: school, year, subject, question, choice1-4, answer, explain
             if (r.length < 9) continue;
             const isBlank = r.slice(0, 9).every((c) => !c?.trim());
             if (isBlank) continue;
             const school = (r[0] || GENERAL).trim() || GENERAL;
             const year = (r[1] || GENERAL).trim() || GENERAL;
             const subject = (r[2] || '').trim().toLowerCase();
-            const question = r[3]?.trim() || '';
-            const c1 = r[4]?.trim() || '', c2 = r[5]?.trim() || '', c3 = r[6]?.trim() || '', c4 = r[7]?.trim() || '';
+            const question = unescNewlines(r[3] || '').trim();
+            const c1 = unescNewlines(r[4] || '').trim(), c2 = unescNewlines(r[5] || '').trim(), c3 = unescNewlines(r[6] || '').trim(), c4 = unescNewlines(r[7] || '').trim();
             const answerIdx = parseAnswerIndex(r[8]);
-            const explain = r[9]?.trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
+            const explain = unescNewlines(r[9] || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
             if (!subjectInfo[subject] || !question || answerIdx === -1 || !c1 || !c2 || !c3 || !c4) { fail++; continue; }
             if (nextSchools.indexOf(school) === -1) nextSchools.push(school);
             if (nextYears.indexOf(year) === -1) nextYears.push(year);
@@ -194,10 +213,6 @@ export function M1BankContent() {
       ['school', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain'],
       [GENERAL, GENERAL, '1', 'science', 'น้ำเดือดที่กี่องศาเซลเซียส?', '50', '100', '150', '200', 'B', 'น้ำเดือดที่ 100 องศา ที่ความดันปกติ'],
       [GENERAL, GENERAL, '1', 'math', '3 คูณ 4 เท่ากับเท่าใด?', '7', '12', '10', '9', 'B', '3x4=12'],
-      ['สวนกุหลาบวิทยาลัย', '2568', '1', 'thai', 'คำว่า กตัญญู หมายถึง?', 'ความขยัน', 'รู้คุณและตอบแทน', 'ความกล้าหาญ', 'ความซื่อสัตย์', 'B', 'กตัญญูคือการรู้คุณและตอบแทนบุญคุณ'],
-      ['สวนกุหลาบวิทยาลัย', '2568', '2', 'thai', 'คำว่า ชาดก หมายถึง?', 'นิทาน', 'เรื่องราวในอดีตของพระพุทธเจ้า', 'เทพนิยาย', 'เรื่องแต่ง', 'B', 'ชาดกคือเรื่องราวในอดีตของพระพุทธเจ้าทั้ง 551 ชาติ'],
-      ['มหิดลวิทยานุสรณ์', '2567', '1', 'english', 'Plural of mouse?', 'Mouses', 'Mice', 'Mouse', 'Mices', 'B', 'Irregular plural: mouse-mice'],
-      ['เตรียมอุดมศึกษาพัฒนาการ', '2568', '1', 'social', 'เมืองหลวงของไทยคือ?', 'เชียงใหม่', 'กรุงเทพมหานคร', 'ภูเก็ต', 'ขอนแก่น', 'B', 'กรุงเทพฯ เป็นเมืองหลวงของไทย'],
     ]
       .map((row) => row.map((cell) => `"${cell}"`).join(','))
       .join('\n');
@@ -208,9 +223,9 @@ export function M1BankContent() {
     const rows = [['school', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain']];
     bank.forEach((q) => {
       rows.push([
-        q.school, q.year, q.set || '1', q.subject, q.q,
-        q.choices[0], q.choices[1], q.choices[2], q.choices[3],
-        ['A', 'B', 'C', 'D'][q.answer], q.explain,
+        q.school, q.year, q.set || '1', q.subject, escNewlines(q.q),
+        escNewlines(q.choices[0]), escNewlines(q.choices[1]), escNewlines(q.choices[2]), escNewlines(q.choices[3]),
+        ['A', 'B', 'C', 'D'][q.answer], escNewlines(q.explain),
       ]);
     });
     downloadTextAsFile(rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n'), 'คลังข้อสอบปัจจุบัน.csv');
@@ -237,6 +252,7 @@ export function M1BankContent() {
       setNewSchool('');
     }
   }, [newSchool, schools, persistSchools]);
+
   const removeSchool = useCallback((name: string) => {
     if (name === GENERAL) return;
     if (confirm(`ลบ "${name}" ใช่หรือไม่? (ข้อสอบที่ผูกไว้ยังอยู่)`)) {
@@ -244,6 +260,7 @@ export function M1BankContent() {
       persistSchools(next);
     }
   }, [schools, persistSchools]);
+
   const [newYear, setNewYear] = useState('');
   const addYear = useCallback(() => {
     const v = newYear.trim();
@@ -252,6 +269,7 @@ export function M1BankContent() {
       setNewYear('');
     }
   }, [newYear, years, persistYears]);
+
   const removeYear = useCallback((y: string) => {
     if (y === GENERAL) return;
     if (confirm(`ลบ "${y}" ใช่หรือไม่?`)) {
@@ -261,8 +279,6 @@ export function M1BankContent() {
   }, [years, persistYears]);
 
   /* ===== ล้างข้อมูล ===== */
-  const [fSet, setFSet] = useState('');
-
   const clearFiltered = useCallback(() => {
     const kept = bank.filter((q) => {
       const mSchool = !fSchool || q.school === fSchool;
@@ -278,7 +294,8 @@ export function M1BankContent() {
       setImportMsg('ลบข้อสอบ ' + removed + ' ข้อเรียบร้อยแล้ว');
       setImportOk(true);
     }
-  }, [bank, fSchool, fYear, fSubject, persistBank]);
+  }, [bank, fSchool, fYear, fSubject, fSet, persistBank]);
+
   const clearAll = useCallback(() => {
     if (confirm('⚠️ ต้องการล้างข้อสอบทั้งหมดในระบบ ใช่หรือไม่? (ไม่สามารถย้อนกลับ)')) {
       persistBank([]);
@@ -286,6 +303,7 @@ export function M1BankContent() {
       setImportOk(true);
     }
   }, [persistBank]);
+
   const restoreDefaults = useCallback(() => {
     if (confirm('ต้องการโหลดข้อมูลเริ่มต้นกลับมา ใช่หรือไม่? (จะเพิ่มเข้าโดยไม่ลบข้อมูลที่มีอยู่)')) {
       const seeds = seedAll();
@@ -296,6 +314,7 @@ export function M1BankContent() {
       setImportOk(true);
     }
   }, [bank, persistBank]);
+
   const deleteOne = useCallback((id: string) => {
     if (confirm('ลบข้อสอบข้อนี้ ใช่หรือไม่?')) {
       persistBank(bank.filter((b) => b.id !== id));
@@ -303,7 +322,6 @@ export function M1BankContent() {
   }, [bank, persistBank]);
 
   /* ===== image helpers ===== */
-  const [editImages, setEditImages] = useState<{q_image?: string; choice_images?: string[]; explain_image?: string}>({});
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>, target: 'q_image' | `choice_${number}` | 'explain_image', choiceIdx?: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -311,108 +329,94 @@ export function M1BankContent() {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
-      setEditImages(prev => {
-        const next = { ...prev };
-        if (target === 'q_image') next.q_image = base64;
-        else if (target === 'explain_image') next.explain_image = base64;
-        else if (target.startsWith('choice_') && choiceIdx !== undefined) {
-          const ci = [...(prev.choice_images || ['', '', '', ''])];
+      setEditForm(prev => {
+        if (target === 'q_image') return { ...prev, q_image: base64 };
+        if (target === 'explain_image') return { ...prev, explain_image: base64 };
+        if (target.startsWith('choice_') && choiceIdx !== undefined) {
+          const ci = [...prev.choice_images];
           ci[choiceIdx] = base64;
-          next.choice_images = ci;
+          return { ...prev, choice_images: ci };
         }
-        return next;
+        return prev;
       });
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   }, []);
+
   const removeImage = useCallback((target: 'q_image' | `choice_${number}` | 'explain_image', choiceIdx?: number) => {
-    setEditImages(prev => {
-      const next = { ...prev };
-      if (target === 'q_image') next.q_image = undefined;
-      else if (target === 'explain_image') next.explain_image = undefined;
-      else if (target.startsWith('choice_') && choiceIdx !== undefined) {
-        const ci = [...(prev.choice_images || ['', '', '', ''])];
+    setEditForm(prev => {
+      if (target === 'q_image') return { ...prev, q_image: undefined };
+      if (target === 'explain_image') return { ...prev, explain_image: undefined };
+      if (target.startsWith('choice_') && choiceIdx !== undefined) {
+        const ci = [...prev.choice_images];
         ci[choiceIdx] = '';
-        next.choice_images = ci;
+        return { ...prev, choice_images: ci };
       }
-      return next;
+      return prev;
     });
   }, []);
 
   /* ===== แก้ไขข้อสอบ (modal) ===== */
   const startEdit = useCallback((id: string) => {
     const q = bank.find(b => b.id === id);
+    if (!q) return;
     setEditingId(id);
-    setEditImages({ q_image: q?.q_image, choice_images: q?.choice_images, explain_image: q?.explain_image });
+    setEditForm({
+      school: q.school || GENERAL,
+      year: q.year || GENERAL,
+      set: q.set || '1',
+      subject: q.subject || 'science',
+      q: q.q || '',
+      choices: q.choices ? [...q.choices] : ['', '', '', ''],
+      answer: typeof q.answer === 'number' ? q.answer : 0,
+      explain: q.explain || '',
+      q_image: q.q_image,
+      choice_images: q.choice_images ? [...q.choice_images] : ['', '', '', ''],
+      explain_image: q.explain_image,
+    });
   }, [bank]);
-  const cancelEdit = useCallback(() => { setEditingId(null); setEditImages({}); }, []);
-  const saveEdit = useCallback((id: string) => {
-    const idx = bank.findIndex((b) => b.id === id);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+  }, []);
+
+  const saveEdit = useCallback(() => {
+    if (!editingId) return;
+    const idx = bank.findIndex((b) => b.id === editingId);
     if (idx === -1) return;
-    const school = document.getElementById('editSchool') as HTMLSelectElement | null;
-    const year = document.getElementById('editYear') as HTMLSelectElement | null;
-    const setEl = document.getElementById('editSet') as HTMLInputElement | null;
-    const subject = document.getElementById('editSubject') as HTMLSelectElement | null;
-    const qText = document.getElementById('editQText') as HTMLTextAreaElement | null;
-    const c0 = document.getElementById('editC0') as HTMLInputElement | null;
-    const c1 = document.getElementById('editC1') as HTMLInputElement | null;
-    const c2 = document.getElementById('editC2') as HTMLInputElement | null;
-    const c3 = document.getElementById('editC3') as HTMLInputElement | null;
-    const explain = document.getElementById('editExplain') as HTMLTextAreaElement | null;
 
-    const schoolVal = (school?.value || GENERAL);
-    const yearVal = (year?.value || GENERAL);
-    const setVal = (setEl?.value?.trim() || '1');
-    const subjectVal = (subject?.value || 'science');
-    const questionVal = (qText?.value.trim() || '');
-    const choices = [
-      (c0?.value.trim() || ''),
-      (c1?.value.trim() || ''),
-      (c2?.value.trim() || ''),
-      (c3?.value.trim() || ''),
-    ];
-    const explainVal = (explain?.value.trim() || '');
-
-    let answer = 0;
-    const radios = document.getElementsByName('editAnswer');
-    for (let r = 0; r < radios.length; r++) {
-      if ((radios[r] as HTMLInputElement).checked) {
-        answer = parseInt((radios[r] as HTMLInputElement).value, 10);
-        break;
-      }
-    }
-
-    if (!subjectInfo[subjectVal]) { alert('กรุณาเลือกวิชา'); return; }
-    if (!questionVal) { alert('กรุณากรอกคำถาม'); return; }
-    if (!choices[0] || !choices[1] || !choices[2] || !choices[3]) { alert('กรุณากรอกตัวเลือกให้ครบทั้ง 4 ข้อ'); return; }
-    if (answer < 0 || answer > 3) { alert('กรุณาเลือกคำตอบที่ถูกต้อง'); return; }
+    if (!editForm.q.trim()) { alert('กรุณากรอกคำถาม'); return; }
+    if (editForm.choices.some(c => !c.trim())) { alert('กรุณากรอกตัวเลือกให้ครบทั้ง 4 ข้อ'); return; }
 
     const updated = [...bank];
-    const cleanChoiceImages = editImages.choice_images?.map(c => c || undefined) as (string | undefined)[] | undefined;
+    const cleanChoiceImages = editForm.choice_images.map(c => c || undefined);
+
     updated[idx] = {
       ...updated[idx],
-      school: schoolVal,
-      year: yearVal,
-      set: setVal,
-      subject: subjectVal,
-      q: questionVal,
-      q_image: editImages.q_image,
-      choices,
-      choice_images: cleanChoiceImages?.some(c => c) ? cleanChoiceImages : undefined,
-      answer,
-      explain: explainVal,
-      explain_image: editImages.explain_image,
+      school: editForm.school,
+      year: editForm.year,
+      set: editForm.set.trim() || '1',
+      subject: editForm.subject,
+      q: editForm.q.trim(),
+      q_image: editForm.q_image || undefined,
+      choices: editForm.choices.map(c => c.trim()),
+      choice_images: cleanChoiceImages.some(c => c) ? cleanChoiceImages : undefined,
+      answer: editForm.answer,
+      explain: editForm.explain.trim(),
+      explain_image: editForm.explain_image || undefined,
       isDefault: false,
     };
+
     persistBank(updated);
     setEditingId(null);
-    setEditImages({});
-    setImportMsg('✅ แก้ไขข้อสอบเรียบร้อยแล้ว');
+    setImportMsg('✅ บันทึกสำเร็จ');
     setImportOk(true);
-  }, [bank, persistBank, editImages]);
+    alert('บันทึกสำเร็จ!');
+  }, [editingId, bank, editForm, persistBank]);
 
-  /* =====  render helpers ===== */
-  const schoolOptions = (selected: string) => (
+  /* ===== render helpers ===== */
+  const schoolOptions = () => (
     <>
       {schools.map((v) => (
         <option key={v} value={v}>{v}</option>
@@ -420,7 +424,7 @@ export function M1BankContent() {
     </>
   );
 
-  const yearOptions = (selected: string) => (
+  const yearOptions = () => (
     <>
       {years.map((v) => (
         <option key={v} value={v}>{v}</option>
@@ -428,7 +432,7 @@ export function M1BankContent() {
     </>
   );
 
-  const subjectOptions = (selected: string) => (
+  const subjectOptions = () => (
     <>
       {(Object.keys(subjectInfo) as Array<keyof typeof subjectInfo>).map((k) => (
         <option key={k} value={k}>{subjectInfo[k].icon} {subjectInfo[k].name}</option>
@@ -448,30 +452,19 @@ export function M1BankContent() {
           <li><b className="text-slate-800">set:</b> ชุดข้อสอบ เช่น 1, 2, 3 (ถ้าไม่ใส่จะเป็นชุดที่ 1)</li>
           <li><b className="text-slate-800">subject:</b> ใส่ science, math, thai, english, social</li>
           <li><b className="text-slate-800">answer:</b> คำตอบที่ถูกเป็น A/B/C/D (หรือ 1-4)</li>
-          <li>ชื่อโรงเรียน/ปีใหม่ที่ยังไม่มีในระบบ จะถูกเพิ่มเข้ารายการอัตโนมัติ</li>
+          <li><b className="text-slate-800">ขึ้นบรรทัดใหม่:</b> พิมพ์ <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">\n</code> ในข้อความ เช่น <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">ก) ...\nข) ...</code></li>
         </ul>
       </div>
 
       <div className="flex flex-wrap gap-2.5">
         <label className="cursor-pointer bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md shadow-amber-600/20 text-xs md:text-sm inline-flex items-center gap-2 transition-all active:scale-95">
           📤 อัปโหลดไฟล์ CSV
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleCSVUpload}
-            className="hidden"
-          />
+          <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
         </label>
-        <button
-          className="bg-white hover:bg-slate-50 text-slate-700 font-bold border border-slate-200 px-4 py-2.5 rounded-xl text-xs md:text-sm inline-flex items-center gap-2 shadow-xs transition-all active:scale-95"
-          onClick={downloadSampleCSV}
-        >
+        <button className="bg-white hover:bg-slate-50 text-slate-700 font-bold border border-slate-200 px-4 py-2.5 rounded-xl text-xs md:text-sm inline-flex items-center gap-2 shadow-xs transition-all active:scale-95" onClick={downloadSampleCSV}>
           📄 ดาวน์โหลดตัวอย่าง
         </button>
-        <button
-          className="bg-white hover:bg-slate-50 text-amber-700 font-bold border border-amber-200 px-4 py-2.5 rounded-xl text-xs md:text-sm inline-flex items-center gap-2 shadow-xs transition-all active:scale-95"
-          onClick={exportCurrentCSV}
-        >
+        <button className="bg-white hover:bg-slate-50 text-amber-700 font-bold border border-amber-200 px-4 py-2.5 rounded-xl text-xs md:text-sm inline-flex items-center gap-2 shadow-xs transition-all active:scale-95" onClick={exportCurrentCSV}>
           💾 ส่งออกข้อมูลปัจจุบัน
         </button>
       </div>
@@ -508,12 +501,9 @@ export function M1BankContent() {
           </select>
           <select value={fSet} onChange={(e) => setFSet(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
             <option value="">-- ทุกชุด --</option>
-            {(() => {
-              const sets = [...new Set(bank.map(q => q.set || '1'))].sort((a, b) => Number(a) - Number(b));
-              return sets.map(s => (
-                <option key={s} value={s}>ชุดที่ {s}</option>
-              ));
-            })()}
+            {[...new Set(bank.map(q => q.set || '1'))].sort((a, b) => Number(a) - Number(b)).map(s => (
+              <option key={s} value={s}>ชุดที่ {s}</option>
+            ))}
           </select>
           <button className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold border border-rose-200 px-3.5 py-2 rounded-xl text-xs transition-all active:scale-95" onClick={clearFiltered}>
             ล้างตามเงื่อนไข
@@ -698,7 +688,7 @@ export function M1BankContent() {
                 <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-xs">{escapeHtml(r.sc)}</span></td>
                 <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-xs">{escapeHtml(r.yr)}</span></td>
                 <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 font-bold text-xs">ชุดที่ {r.st}</span></td>
-                <td className="px-4 py-2.5">{subjectInfo[r.sub].icon} {subjectInfo[r.sub].name}</td>
+                <td className="px-4 py-2.5">{subjectInfo[r.sub]?.icon} {subjectInfo[r.sub]?.name}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-900">{r.count}</td>
               </tr>
             ))}
@@ -733,20 +723,26 @@ export function M1BankContent() {
                 {subjectInfo[q.subject]?.icon || '📌'} {subjectInfo[q.subject]?.name || q.subject}
               </span>
             </div>
-            <div className="font-bold text-slate-800 text-sm md:text-base">{q.q}</div>
-            <div className="bg-slate-50 rounded-xl p-3 text-xs md:text-sm text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {q.choices.map((c: string, idx: number) => (
-                <div key={idx} className={idx === q.answer ? 'font-bold text-emerald-700' : ''}>
-                  {String.fromCharCode(65 + idx)}. {c} {idx === q.answer ? '✓' : ''}
-                </div>
-              ))}
-            </div>
+            <MathText as="div" className="font-bold text-slate-800 text-sm md:text-base whitespace-pre-line">{q.q}</MathText>
+
             {q.q_image && (
               <img src={q.q_image} alt="รูปคำถาม" className="max-h-40 rounded-xl border border-slate-200" />
             )}
+
+            <div className="bg-slate-50 rounded-xl p-3 text-xs md:text-sm text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {q.choices.map((c: string, idx: number) => (
+                <div key={idx} className={`flex flex-col gap-1 p-1.5 rounded-lg ${idx === q.answer ? 'font-bold text-emerald-700 bg-emerald-50/50' : ''}`}>
+                  <div className="whitespace-pre-line">{String.fromCharCode(65 + idx)}. <MathText>{c}</MathText> {idx === q.answer ? '✓' : ''}</div>
+                  {q.choice_images?.[idx] && (
+                    <img src={q.choice_images[idx]} alt={`รูปตัวเลือก ${String.fromCharCode(65 + idx)}`} className="h-16 w-auto object-contain rounded border border-slate-200 self-start" />
+                  )}
+                </div>
+              ))}
+            </div>
+
             {q.explain && (
               <div className="text-xs text-slate-500 bg-amber-50/50 p-2.5 rounded-xl border border-amber-100/60">
-                💡 <strong>เฉลย:</strong> {q.explain}
+                💡 <strong>เฉลย:</strong> <MathText className="whitespace-pre-line">{q.explain}</MathText>
                 {q.explain_image && (<img src={q.explain_image} alt="รูปเฉลย" className="mt-2 max-h-32 rounded-lg border border-amber-200" />)}
               </div>
             )}
@@ -766,8 +762,7 @@ export function M1BankContent() {
 
   /* ===== edit modal ===== */
   const renderEditModal = () => {
-    const q = bank.find((b) => b.id === editingId);
-    if (!q) return null;
+    if (!editingId) return null;
     return (
       <div
         className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4"
@@ -775,7 +770,7 @@ export function M1BankContent() {
           if (e.target === e.currentTarget) cancelEdit();
         }}
       >
-        <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-xl max-h-[90vh] overflow-y-auto" key={editingId ?? 'modal'}>
+        <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-xl max-h-[90vh] overflow-y-auto">
           <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 p-5 text-white">
             <h3 className="text-base md:text-lg font-black tracking-tight flex items-center gap-2">
               <span>✏️ แก้ไขข้อสอบเข้า ม.1</span>
@@ -786,54 +781,107 @@ export function M1BankContent() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">🏫 โรงเรียน</label>
-                <select id="editSchool" defaultValue={q.school} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30">{schoolOptions(q.school)}</select>
+                <select
+                  value={editForm.school}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, school: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                >
+                  {schoolOptions()}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">📅 ปี พ.ศ.</label>
-                <select id="editYear" defaultValue={q.year} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30">{yearOptions(q.year)}</select>
+                <select
+                  value={editForm.year}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, year: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                >
+                  {yearOptions()}
+                </select>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">📋 ชุดที่</label>
-                <input id="editSet" type="text" defaultValue={q.set || '1'} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30" placeholder="เช่น 1, 2, 3" />
+                <input
+                  type="text"
+                  value={editForm.set}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, set: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                  placeholder="เช่น 1, 2, 3"
+                />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">📚 วิชา</label>
-                <select id="editSubject" defaultValue={q.subject} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30">{subjectOptions(q.subject)}</select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">❓ คำถาม</label>
-              <textarea id="editQText" rows={2} defaultValue={q.q} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30" />
-              <div className="flex items-center gap-2 mt-1.5">
-                <label className="cursor-pointer text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-100 inline-flex items-center gap-1">
-                  📷 แนบรูปภาพ
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'q_image')} />
-                </label>
-                {editImages.q_image && (<>
-                  <img src={editImages.q_image} alt="" className="h-10 rounded-lg border" />
-                  <button type="button" onClick={() => removeImage('q_image')} className="text-rose-500 text-xs font-bold">✕</button>
-                </>)}
+                <select
+                  value={editForm.subject}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, subject: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                >
+                  {subjectOptions()}
+                </select>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">✅ ตัวเลือก (คลิกวงกลมหน้าข้อที่เป็นคำตอบถูก)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">❓ คำถาม</label>
+              <textarea
+                rows={2}
+                value={editForm.q}
+                onChange={(e) => setEditForm(prev => ({ ...prev, q: e.target.value }))}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+              />
+              <div className="flex items-center gap-2 mt-1.5">
+                <label className="cursor-pointer text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-100 inline-flex items-center gap-1">
+                  📷 แนบรูปภาพคำถาม
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'q_image')} />
+                </label>
+                {editForm.q_image && (
+                  <>
+                    <img src={editForm.q_image} alt="รูปคำถาม" className="h-10 rounded-lg border object-cover" />
+                    <button type="button" onClick={() => removeImage('q_image')} className="text-rose-500 text-xs font-bold">✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-2">✅ ตัวเลือก (เลือกวงกลมหน้าข้อที่เป็นคำตอบที่ถูกต้อง)</label>
               <div className="space-y-2">
-                {([0, 1, 2, 3] as const).map((c) => (
+                {[0, 1, 2, 3].map((c) => (
                   <div key={c} className="flex items-center gap-2">
-                    <input type="radio" name="editAnswer" value={c} defaultChecked={q.answer === c} className="w-4 h-4 accent-amber-600" />
+                    <input
+                      type="radio"
+                      name="editAnswerRadio"
+                      checked={editForm.answer === c}
+                      onChange={() => setEditForm(prev => ({ ...prev, answer: c }))}
+                      className="w-4 h-4 accent-amber-600"
+                    />
                     <span className="w-5 font-bold text-amber-800 text-xs">{String.fromCharCode(65 + c)}.</span>
-                    <input type="text" id={`editC${c}`} defaultValue={q.choices[c]} className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-amber-500/30" />
+                    <input
+                      type="text"
+                      value={editForm.choices[c]}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditForm(prev => {
+                          const next = [...prev.choices];
+                          next[c] = val;
+                          return { ...prev, choices: next };
+                        });
+                      }}
+                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-amber-500/30"
+                    />
                     <label className="cursor-pointer text-xs text-slate-400 hover:text-amber-600" title="แนบรูปภาพ">
                       📷
                       <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, `choice_${c}` as any, c)} />
                     </label>
-                    {editImages.choice_images?.[c] && (<>
-                      <img src={editImages.choice_images[c]} alt="" className="h-8 w-8 rounded-lg border object-cover" />
-                      <button type="button" onClick={() => removeImage(`choice_${c}` as any, c)} className="text-rose-500 text-xs">✕</button>
-                    </>)}
+                    {editForm.choice_images[c] && (
+                      <>
+                        <img src={editForm.choice_images[c]} alt="" className="h-8 w-8 rounded-lg border object-cover" />
+                        <button type="button" onClick={() => removeImage(`choice_${c}` as any, c)} className="text-rose-500 text-xs">✕</button>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -841,22 +889,29 @@ export function M1BankContent() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">💡 คำอธิบายเฉลย</label>
-              <textarea id="editExplain" rows={2} defaultValue={q.explain} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30" />
+              <textarea
+                rows={2}
+                value={editForm.explain}
+                onChange={(e) => setEditForm(prev => ({ ...prev, explain: e.target.value }))}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+              />
               <div className="flex items-center gap-2 mt-1.5">
                 <label className="cursor-pointer text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-100 inline-flex items-center gap-1">
-                  📷 แนบรูปภาพ
+                  📷 แนบรูปภาพเฉลย
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'explain_image')} />
                 </label>
-                {editImages.explain_image && (<>
-                  <img src={editImages.explain_image} alt="" className="h-10 rounded-lg border" />
-                  <button type="button" onClick={() => removeImage('explain_image')} className="text-rose-500 text-xs font-bold">✕</button>
-                </>)}
+                {editForm.explain_image && (
+                  <>
+                    <img src={editForm.explain_image} alt="รูปเฉลย" className="h-10 rounded-lg border object-cover" />
+                    <button type="button" onClick={() => removeImage('explain_image')} className="text-rose-500 text-xs font-bold">✕</button>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50" onClick={cancelEdit}>ยกเลิก</button>
-              <button className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-600/20 hover:from-amber-700 hover:to-orange-700" onClick={() => saveEdit(q.id)}>💾 บันทึกการแก้ไข</button>
+              <button type="button" className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50" onClick={cancelEdit}>ยกเลิก</button>
+              <button type="button" className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-600/20 hover:from-amber-700 hover:to-orange-700" onClick={saveEdit}>💾 บันทึกการแก้ไข</button>
             </div>
           </div>
         </div>

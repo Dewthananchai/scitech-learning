@@ -1,311 +1,1010 @@
-import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { useAppStore } from '../store/AppContext';
-import { GRADES, ONET_SUBJECTS } from '../types';
-import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import React, { useState, useCallback, useEffect } from 'react';
+import MathText from '../components/MathText';
+import {
+  OnetBankQuestion,
+  ensureOnetBankData,
+  loadLevelList,
+  loadOnetYearList,
+  seedOnetAll,
+  subjectInfo,
+  ONET_QUESTION_KEY,
+  ONET_LEVELS_KEY,
+  ONET_YEARS_KEY,
+  ONET_GENERAL,
+} from '../data/onetBankData';
 
-export default function AdminQuestionsONet() {
-  const { questions, addQuestion, updateQuestion, deleteQuestion, deleteQuestionsByCategory, subjects } = useAppStore();
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+/* ---------- helpers ---------- */
+const escapeHtml = (s: string) =>
+  String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
-  const [form, setForm] = useState({
-    question_text: '',
-    option_a: '',
-    option_b: '',
-    option_c: '',
-    option_d: '',
-    correct_answer: 'A' as 'A' | 'B' | 'C' | 'D',
-    explanation: '',
-    difficulty: 2 as 1 | 2 | 3,
-    subject: '',
-    subject_unit_id: '',
+const parseCSV = (text: string): string[][] => {
+  const lines: string[][] = [];
+  let current = '';
+  let inQuotes = false;
+  let row: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (inQuotes) {
+      if (ch === '"' && next === '"') { current += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else current += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { row.push(current.trim()); current = ''; }
+      else if (ch === '\n' || (ch === '\r' && next === '\n')) {
+        row.push(current.trim());
+        if (row.some(c => c !== '')) lines.push(row);
+        row = []; current = '';
+        if (ch === '\r') i++;
+      } else current += ch;
+    }
+  }
+  row.push(current.trim());
+  if (row.some(c => c !== '')) lines.push(row);
+  return lines;
+};
+
+const parseAnswerIndex = (raw: string): number => {
+  if (!raw) return -1;
+  const v = raw.trim().toUpperCase();
+  if (v === 'A') return 0;
+  if (v === 'B') return 1;
+  if (v === 'C') return 2;
+  if (v === 'D') return 3;
+  const n = parseInt(v, 10);
+  if (!isNaN(n) && n >= 1 && n <= 4) return n - 1;
+  return -1;
+};
+
+/* ขึ้นบรรทัดใหม่: ใน CSV พิมพ์ \\n เพื่อขึ้นบรรทัดใหม่ เช่น "ข้อความ\\nบรรทัดสอง"
+   (ไม่แตะต้อง \\neq \\nu ฯลฯ — คำสั่ง LaTeX ที่ขึ้นต้นด้วย \\n ตามด้วยตัวอักษร) */
+const unescNewlines = (s: string) => String(s).replace(/\\n(?![a-zA-Z])/g, '\n');
+const escNewlines = (s: string) => String(s).replace(/\n/g, '\\n');
+
+/* ---------- component ---------- */
+export const AdminQuestionsONetBank: React.FC = () => {
+  const [bank, setBank] = useState<OnetBankQuestion[]>([]);
+  const [levels, setLevels] = useState<string[]>([]);
+  const [years, setYears] = useState<string[]>([]);
+
+  /* ----- persistence ----- */
+  const persistBank = useCallback((next: OnetBankQuestion[]) => {
+    setBank(next);
+    localStorage.setItem(ONET_QUESTION_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event('onet-bank-updated'));
+  }, []);
+
+  const persistLevels = useCallback((next: string[]) => {
+    localStorage.setItem(ONET_LEVELS_KEY, JSON.stringify(next));
+    setLevels(next);
+  }, []);
+
+  const persistYears = useCallback((next: string[]) => {
+    localStorage.setItem(ONET_YEARS_KEY, JSON.stringify(next));
+    setYears(next);
+  }, []);
+
+  useEffect(() => {
+    setBank(ensureOnetBankData());
+    setLevels(loadLevelList());
+    setYears(loadOnetYearList());
+  }, []);
+
+  /* ----- tabs / modal ----- */
+  type Tab = 'import' | 'manage' | 'list';
+  const [tab, setTab] = useState<Tab>('import');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [modalMode, setModalMode] = useState<'edit' | 'add'>('edit');
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importOk, setImportOk] = useState<boolean | null>(null);
+
+  /* ----- state สำหรับฟอร์ม (เพิ่ม/แก้ไข) ----- */
+  const [form, setForm] = useState<{
+    level: string;
+    year: string;
+    set: string;
+    subject: string;
+    q: string;
+    choices: string[];
+    answer: number;
+    explain: string;
+    q_image?: string;
+    choice_images: string[];
+    explain_image?: string;
+  }>({
+    level: '',
+    year: ONET_GENERAL,
+    set: '1',
+    subject: 'science',
+    q: '',
+    choices: ['', '', '', ''],
+    answer: 0,
+    explain: '',
+    choice_images: ['', '', '', ''],
   });
 
-  const onetQuestions = useMemo(() => questions.filter(q => (q as any).category === 'onet'), [questions]);
+  /* ----- filters ----- */
+  const [fLevel, setFLevel] = useState('');
+  const [fYear, setFYear] = useState('');
+  const [fSubject, setFSubject] = useState('');
+  const [fSet, setFSet] = useState('');
+  const [fSearch, setFSearch] = useState('');
 
-  const filteredQuestions = useMemo(() => {
-    if (!selectedSubject) return onetQuestions;
-    return onetQuestions.filter(q => (q as any).subject === selectedSubject);
-  }, [onetQuestions, selectedSubject]);
-
-  const subjectCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    ONET_SUBJECTS.forEach(s => { counts[s] = 0; });
-    onetQuestions.forEach(q => {
-      const s = (q as any).subject || '';
-      if (counts[s] !== undefined) counts[s]++;
-    });
-    return counts;
-  }, [onetQuestions]);
-
-  const handleSubmit = () => {
-    if (!form.question_text || !form.option_a || !form.option_b) return;
-    const q = {
-      ...form,
-      subject_unit_id: form.subject_unit_id ? Number(form.subject_unit_id) : 0,
-      lesson_id: 0,
-      question_type: 'multiple_choice' as const,
-      is_active: true,
-      category: 'onet' as const,
-      subject: form.subject,
-    };
-    if (editingId) {
-      updateQuestion(editingId, q);
-    } else {
-      addQuestion(q);
-    }
-    resetForm();
-  };
-
-  const resetForm = () => {
-    setForm({ question_text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'A', explanation: '', difficulty: 2, subject: '', subject_unit_id: '' });
-    setEditingId(null);
-    setShowForm(false);
-  };
-
-  const handleEdit = (q: any) => {
-    setForm({
-      question_text: q.question_text,
-      option_a: q.option_a,
-      option_b: q.option_b,
-      option_c: q.option_c || '',
-      option_d: q.option_d || '',
-      correct_answer: q.correct_answer,
-      explanation: q.explanation || '',
-      difficulty: q.difficulty || 2,
-      subject: q.subject || '',
-      subject_unit_id: String(q.subject_unit_id || ''),
-    });
-    setEditingId(q.id);
-    setShowForm(true);
-  };
-
-  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /* ===== CSV ===== */
+  const handleCSVUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const lines = text.split('\n').filter(l => l.trim());
-      const header = lines[0];
-      const isThai = header.includes('คำถาม');
-      const hasSubject = header.includes('วิชา');
-      const dataLines = lines.slice(1);
-      dataLines.forEach(line => {
-        const cols = line.match(/(".*?"|[^,]+)/g) || [];
-        const clean = (s: string) => s.replace(/^"|"$/g, '').trim();
-        addQuestion({
-          question_text: clean(cols[0] || ''),
-          option_a: clean(cols[1] || ''),
-          option_b: clean(cols[2] || ''),
-          option_c: clean(cols[3] || ''),
-          option_d: clean(cols[4] || ''),
-          correct_answer: clean(cols[5] || 'A'),
-          explanation: clean(cols[6] || ''),
-          difficulty: parseInt(clean(cols[7] || '2')),
-          subject: hasSubject ? clean(cols[8] || '') : '',
-          lesson_id: 0,
-          subject_unit_id: 0,
-          question_type: 'multiple_choice',
-          is_active: true,
-          category: 'onet' as const,
-        });
-      });
+    reader.onload = () => {
+      try {
+        const rows = parseCSV(reader.result as string);
+        if (rows.length === 0) { setImportMsg('ไฟล์ว่างเปล่า'); setImportOk(false); return; }
+        let start = 0;
+        const header = rows[0]?.map(c => c.trim().toLowerCase()) || [];
+        const hasSetCol = header.includes('set');
+        if (header.includes('level')) start = 1;
+        let ok = 0, fail = 0;
+        const nextLevels = [...levels];
+        const nextYears = [...years];
+        const nextBank = [...bank];
+        for (let i = start; i < rows.length; i++) {
+          const r = rows[i];
+          if (hasSetCol) {
+            if (r.length < 10) continue;
+            const isBlank = r.slice(0, 10).every((c) => !c?.trim());
+            if (isBlank) continue;
+            const level = (r[0] || ONET_GENERAL).trim() || ONET_GENERAL;
+            const year = (r[1] || ONET_GENERAL).trim() || ONET_GENERAL;
+            const set = (r[2] || '1').trim() || '1';
+            const subject = (r[3] || '').trim().toLowerCase();
+            const question = unescNewlines(r[4] || '').trim();
+            const c1 = unescNewlines(r[5] || '').trim(), c2 = unescNewlines(r[6] || '').trim(), c3 = unescNewlines(r[7] || '').trim(), c4 = unescNewlines(r[8] || '').trim();
+            const answerIdx = parseAnswerIndex(r[9]);
+            const explain = unescNewlines(r[10] || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
+            if (!subjectInfo[subject] || !question || answerIdx === -1 || !c1 || !c2 || !c3 || !c4) { fail++; continue; }
+            if (nextLevels.indexOf(level) === -1) nextLevels.push(level);
+            if (nextYears.indexOf(year) === -1) nextYears.push(year);
+            nextBank.push({ id: 'c_onet_' + Date.now() + '_' + i, isDefault: false, level, year, set, subject, q: question, choices: [c1, c2, c3, c4], answer: answerIdx, explain });
+          } else {
+            if (r.length < 9) continue;
+            const isBlank = r.slice(0, 9).every((c) => !c?.trim());
+            if (isBlank) continue;
+            const level = (r[0] || ONET_GENERAL).trim() || ONET_GENERAL;
+            const year = (r[1] || ONET_GENERAL).trim() || ONET_GENERAL;
+            const subject = (r[2] || '').trim().toLowerCase();
+            const question = unescNewlines(r[3] || '').trim();
+            const c1 = unescNewlines(r[4] || '').trim(), c2 = unescNewlines(r[5] || '').trim(), c3 = unescNewlines(r[6] || '').trim(), c4 = unescNewlines(r[7] || '').trim();
+            const answerIdx = parseAnswerIndex(r[8]);
+            const explain = unescNewlines(r[9] || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
+            if (!subjectInfo[subject] || !question || answerIdx === -1 || !c1 || !c2 || !c3 || !c4) { fail++; continue; }
+            if (nextLevels.indexOf(level) === -1) nextLevels.push(level);
+            if (nextYears.indexOf(year) === -1) nextYears.push(year);
+            nextBank.push({ id: 'c_onet_' + Date.now() + '_' + i, isDefault: false, level, year, set: '1', subject, q: question, choices: [c1, c2, c3, c4], answer: answerIdx, explain });
+          }
+          ok++;
+        }
+        persistBank(nextBank);
+        persistLevels(nextLevels);
+        persistYears(nextYears);
+        setImportMsg('✅ นำเข้าสำเร็จ ' + ok + ' ข้อ' + (fail > 0 ? ' ⚠️ ผิดพลาด ' + fail + ' แถว' : ''));
+        setImportOk(fail === 0);
+      } catch (err: any) {
+        setImportMsg('เกิดข้อผิดพลาดขณะอ่านไฟล์: ' + err?.message);
+        setImportOk(false);
+      }
     };
-    reader.readAsText(file);
+    reader.onerror = () => {
+      setImportMsg('ไม่สามารถอ่านไฟล์ได้');
+      setImportOk(false);
+    };
+    reader.readAsText(file, 'UTF-8');
     e.target.value = '';
-  };
+  }, [levels, years, bank, persistBank, persistLevels, persistYears]);
 
-  const downloadSampleCSV = () => {
-    const csv = `คำถาม,ตัวเลือก A,ตัวเลือก B,ตัวเลือก C,ตัวเลือก D,เฉลย,คำอธิบาย,ระดับความยาก,วิชา
-"ข้อใดเป็นธาตุ?","น้ำ","อากาศ","ทองแดง","เกลือ","C","ทองแดงเป็นธาตุที่มีอยู่ในธรรมชาติ",2,"วิทยาศาสตร์"
-"ข้อใดไม่ใช่ทรัพยากรธรรมชาติ?","ป่าไม้","แร่ธาตุ","น้ำมันปาล์ม","น้ำทะเล","C","น้ำมันปาล์มเป็นผลิตภัณฑ์จากมนุษย์",2,"วิทยาศาสตร์"
-"1 + 2 เท่ากับ多少?","2","3","4","5","C","บวกเลขง่ายๆ",1,"คณิตศาสตร์"
-"คำว่า 'beautiful' แปลว่าอะไร?","สวย","ใหญ่","เร็ว","สูง","A","Beautiful แปลว่า สวย",1,"ภาษาอังกฤษ"`;
-    const blob = new Blob([csv], { type: 'text/csv' });
+  const downloadTextAsFile = (text: string, filename: string) => {
+    const blob = new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'sample_onet_questions.csv';
+    a.download = filename;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 500);
   };
 
-  const difficultyLabel = (d: number) => d === 1 ? 'ง่าย' : d === 2 ? 'ปานกลาง' : 'ยาก';
-  const difficultyColor = (d: number) => d === 1 ? 'bg-green-100 text-green-700' : d === 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
+  const downloadSampleCSV = useCallback(() => {
+    const sample = [
+      ['level', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain'],
+      [ONET_GENERAL, ONET_GENERAL, '1', 'science', 'น้ำเดือดที่กี่องศาเซลเซียส?', '50', '100', '150', '200', 'B', 'น้ำเดือดที่ 100 องศา ที่ความดันปกติ'],
+      [ONET_GENERAL, ONET_GENERAL, '1', 'math', '3 คูณ 4 เท่ากับเท่าใด?', '7', '12', '10', '9', 'B', '3x4=12'],
+    ]
+      .map((row) => row.map((cell) => `"${cell}"`).join(','))
+      .join('\n');
+    downloadTextAsFile(sample, 'ตัวอย่างคลังข้อสอบONET.csv');
+  }, []);
 
-  const subjectColor = (s: string) => {
-    const colors: Record<string, string> = {
-      'วิทยาศาสตร์': 'bg-emerald-100 text-emerald-700',
-      'คณิตศาสตร์': 'bg-blue-100 text-blue-700',
-      'ภาษาไทย': 'bg-purple-100 text-purple-700',
-      'ภาษาอังกฤษ': 'bg-amber-100 text-amber-700',
+  const exportCurrentCSV = useCallback(() => {
+    const rows = [['level', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain']];
+    bank.forEach((q) => {
+      rows.push([
+        q.level, q.year, q.set || '1', q.subject, escNewlines(q.q),
+        escNewlines(q.choices[0]), escNewlines(q.choices[1]), escNewlines(q.choices[2]), escNewlines(q.choices[3]),
+        ['A', 'B', 'C', 'D'][q.answer], escNewlines(q.explain),
+      ]);
+    });
+    downloadTextAsFile(rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n'), 'คลังข้อสอบO-NETปัจจุบัน.csv');
+  }, [bank]);
+
+  /* ===== ระดับชั้น / ปี ===== */
+  const [newLevel, setNewLevel] = useState('');
+  const addLevel = useCallback(() => {
+    const v = newLevel.trim();
+    if (v && !levels.includes(v)) {
+      persistLevels([...levels, v]);
+      setNewLevel('');
+    }
+  }, [newLevel, levels, persistLevels]);
+
+  const removeLevel = useCallback((name: string) => {
+    if (confirm(`ลบ "${name}" ใช่หรือไม่? (ข้อสอบที่ผูกไว้ยังอยู่)`)) {
+      const next = levels.filter((s) => s !== name);
+      persistLevels(next);
+    }
+  }, [levels, persistLevels]);
+
+  const [newYear, setNewYear] = useState('');
+  const addYear = useCallback(() => {
+    const v = newYear.trim();
+    if (v && !years.includes(v)) {
+      persistYears([...years, v]);
+      setNewYear('');
+    }
+  }, [newYear, years, persistYears]);
+
+  const removeYear = useCallback((y: string) => {
+    if (confirm(`ลบ "${y}" ใช่หรือไม่?`)) {
+      const next = years.filter((x) => x !== y);
+      persistYears(next);
+    }
+  }, [years, persistYears]);
+
+  /* ===== ล้างข้อมูล ===== */
+  const clearFiltered = useCallback(() => {
+    const kept = bank.filter((q) => {
+      const mLevel = !fLevel || q.level === fLevel;
+      const mYear = !fYear || q.year === fYear;
+      const mSubject = !fSubject || q.subject === fSubject;
+      const mSet = !fSet || (q.set || '1') === fSet;
+      return !(mLevel && mYear && mSubject && mSet);
+    });
+    const removed = bank.length - kept.length;
+    if (removed === 0) { setImportMsg('ไม่มีข้อสอบตรงเงื่อนไข'); setImportOk(true); return; }
+    if (confirm(`ต้องการลบ ${removed} ข้อ ใช่หรือไม่?`)) {
+      persistBank(kept);
+      setImportMsg('ลบข้อสอบ O-NET ' + removed + ' ข้อเรียบร้อยแล้ว');
+      setImportOk(true);
+    }
+  }, [bank, fLevel, fYear, fSubject, fSet, persistBank]);
+
+  const clearAll = useCallback(() => {
+    if (confirm('⚠️ ต้องการล้างข้อสอบทั้งหมดในระบบ ใช่หรือไม่? (ไม่สามารถย้อนกลับ)')) {
+      persistBank([]);
+      setImportMsg('ล้างข้อสอบทั้งหมดเรียบร้อยแล้ว');
+      setImportOk(true);
+    }
+  }, [persistBank]);
+
+  const restoreDefaults = useCallback(() => {
+    if (confirm('ต้องการโหลดข้อมูลเริ่มต้นกลับมา ใช่หรือไม่? (จะเพิ่มเข้าโดยไม่ลบข้อมูลที่มีอยู่)')) {
+      const seeds = seedOnetAll();
+      const existIds = new Set(bank.map((b) => b.id));
+      const toAdd = seeds.filter((s) => !existIds.has(s.id));
+      persistBank([...bank, ...toAdd]);
+      setImportMsg('โหลดข้อมูลเริ่มต้นเรียบร้อยแล้ว');
+      setImportOk(true);
+    }
+  }, [bank, persistBank]);
+
+  const deleteOne = useCallback((id: string) => {
+    if (confirm('ลบข้อสอบข้อนี้ ใช่หรือไม่?')) {
+      persistBank(bank.filter((b) => b.id !== id));
+    }
+  }, [bank, persistBank]);
+
+  /* ===== image helpers ===== */
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>, target: 'q_image' | `choice_${number}` | 'explain_image', choiceIdx?: number) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert('รูปภาพต้องมีขนาดไม่เกิน 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setForm(prev => {
+        if (target === 'q_image') return { ...prev, q_image: base64 };
+        if (target === 'explain_image') return { ...prev, explain_image: base64 };
+        if (target.startsWith('choice_') && choiceIdx !== undefined) {
+          const ci = [...prev.choice_images];
+          ci[choiceIdx] = base64;
+          return { ...prev, choice_images: ci };
+        }
+        return prev;
+      });
     };
-    return colors[s] || 'bg-slate-100 text-slate-700';
-  };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }, []);
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <MobileHeader title="ข้อสอบ O-NET" />
-      <AdminSidebar />
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">🎯 ข้อสอบ O-NET</h1>
-            <p className="text-slate-500 text-sm mt-1">จัดการข้อสอบสำหรับการสอบ O-NET ระดับชั้นประถมศึกษา</p>
-          </div>
-          <div className="flex gap-2">
-            {onetQuestions.length > 0 && (
-              <button
-                onClick={() => {
-                  if (window.confirm(`ต้องการลบข้อสอบ O-NET ทั้งหมด ${onetQuestions.length} ข้อ ใช่หรือไม่?`)) {
-                    deleteQuestionsByCategory('onet');
-                  }
-                }}
-                className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
-              >🗑️ ล้างทั้งหมด ({onetQuestions.length})</button>
-            )}
-            <button onClick={() => downloadSampleCSV()} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm hover:bg-slate-200">⬇ ตัวอย่าง CSV</button>
-            <label className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm hover:bg-emerald-600 cursor-pointer">
-              📁 นำเข้าจากไฟล์
-              <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-            </label>
-            <button onClick={() => { resetForm(); setShowForm(true); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">+ เพิ่มข้อสอบใหม่</button>
-          </div>
+  const removeImage = useCallback((target: 'q_image' | `choice_${number}` | 'explain_image', choiceIdx?: number) => {
+    setForm(prev => {
+      if (target === 'q_image') return { ...prev, q_image: undefined };
+      if (target === 'explain_image') return { ...prev, explain_image: undefined };
+      if (target.startsWith('choice_') && choiceIdx !== undefined) {
+        const ci = [...prev.choice_images];
+        ci[choiceIdx] = '';
+        return { ...prev, choice_images: ci };
+      }
+      return prev;
+    });
+  }, []);
+
+  /* ===== แก้ไข/เพิ่มข้อสอบ (modal) ===== */
+  const startAdd = useCallback(() => {
+    setForm({
+      level: levels[0] || '',
+      year: years[0] || ONET_GENERAL,
+      set: '1',
+      subject: 'science',
+      q: '',
+      choices: ['', '', '', ''],
+      answer: 0,
+      explain: '',
+      choice_images: ['', '', '', ''],
+    });
+    setModalMode('add');
+    setEditingId('new');
+  }, [levels, years]);
+
+  const startEdit = useCallback((id: string) => {
+    const q = bank.find(b => b.id === id);
+    if (!q) return;
+    setModalMode('edit');
+    setEditingId(id);
+    setForm({
+      level: q.level || levels[0] || '',
+      year: q.year || ONET_GENERAL,
+      set: q.set || '1',
+      subject: q.subject || 'science',
+      q: q.q || '',
+      choices: q.choices ? [...q.choices] : ['', '', '', ''],
+      answer: typeof q.answer === 'number' ? q.answer : 0,
+      explain: q.explain || '',
+      q_image: q.q_image,
+      choice_images: q.choice_images ? [...q.choice_images] : ['', '', '', ''],
+      explain_image: q.explain_image,
+    });
+  }, [bank, levels]);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+  }, []);
+
+  const saveEdit = useCallback(() => {
+    if (!editingId) return;
+
+    if (!form.q.trim()) { alert('กรุณากรอกคำถาม'); return; }
+    if (form.choices.some(c => !c.trim())) { alert('กรุณากรอกตัวเลือกให้ครบทั้ง 4 ข้อ'); return; }
+
+    const cleanChoiceImages = form.choice_images.map(c => c || undefined);
+
+    if (modalMode === 'add') {
+      const newQuestion: OnetBankQuestion = {
+        id: 'onet_' + Date.now(),
+        isDefault: false,
+        level: form.level,
+        year: form.year,
+        set: form.set.trim() || '1',
+        subject: form.subject,
+        q: form.q.trim(),
+        q_image: form.q_image || undefined,
+        choices: form.choices.map(c => c.trim()),
+        choice_images: cleanChoiceImages.some(c => c) ? form.choice_images.map(c => c || '') : undefined,
+        answer: form.answer,
+        explain: form.explain.trim(),
+        explain_image: form.explain_image || undefined,
+      };
+      persistBank([...bank, newQuestion]);
+      setEditingId(null);
+      setImportMsg('✅ เพิ่มข้อสอบใหม่เรียบร้อยแล้ว');
+      setImportOk(true);
+      return;
+    }
+
+    const idx = bank.findIndex((b) => b.id === editingId);
+    if (idx === -1) return;
+
+    const updated = [...bank];
+
+    updated[idx] = {
+      ...updated[idx],
+      level: form.level,
+      year: form.year,
+      set: form.set.trim() || '1',
+      subject: form.subject,
+      q: form.q.trim(),
+      q_image: form.q_image || undefined,
+      choices: form.choices.map(c => c.trim()),
+      choice_images: form.choice_images.some(c => c) ? form.choice_images.map(c => c || '') : undefined,
+      answer: form.answer,
+      explain: form.explain.trim(),
+      explain_image: form.explain_image || undefined,
+      isDefault: false,
+    };
+
+    persistBank(updated);
+    setEditingId(null);
+    setImportMsg('✅ บันทึกสำเร็จ');
+    setImportOk(true);
+    alert('บันทึกสำเร็จ!');
+  }, [editingId, modalMode, bank, form, persistBank]);
+
+  /* ===== render helpers ===== */
+  const levelOptions = () => (
+    <>
+      {levels.map((v) => (
+        <option key={v} value={v}>{escapeHtml(v)}</option>
+      ))}
+    </>
+  );
+
+  const yearOptions = () => (
+    <>
+      {years.map((v) => (
+        <option key={v} value={v}>{escapeHtml(v)}</option>
+      ))}
+    </>
+  );
+
+  const subjectOptions = () => (
+    <>
+      {(Object.keys(subjectInfo) as Array<keyof typeof subjectInfo>).map((k) => (
+        <option key={k} value={k}>{subjectInfo[k].icon} {subjectInfo[k].name}</option>
+      ))}
+    </>
+  );
+
+  /* ===== TAB: import ===== */
+  const renderImportTab = () => (
+    <div className="space-y-6">
+      <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 md:p-5 text-xs md:text-sm text-slate-700 leading-relaxed shadow-xs">
+        <b className="text-amber-900 text-sm md:text-base flex items-center gap-2 mb-1.5">📋 รูปแบบไฟล์ CSV</b>
+        <p className="mb-2">คอลัมน์ที่ต้องการ: <code className="bg-white text-amber-800 px-2 py-0.5 rounded-lg border border-amber-200 font-mono text-xs font-bold">level, year, set, subject, question, choice1, choice2, choice3, choice4, answer, explain</code></p>
+        <ul className="list-disc pl-5 space-y-1 text-slate-600">
+          <li><b className="text-slate-800">level:</b> ระดับชั้น เช่น ป.6, ม.3, ม.6 หรือ "ทั่วไป"</li>
+          <li><b className="text-slate-800">year:</b> ปี พ.ศ. หรือ "ทั่วไป"</li>
+          <li><b className="text-slate-800">set:</b> ชุดข้อสอบ เช่น 1, 2, 3 (ถ้าไม่ใส่จะเป็นชุดที่ 1)</li>
+          <li><b className="text-slate-800">subject:</b> ใส่ science, math, thai, english, social</li>
+          <li><b className="text-slate-800">answer:</b> คำตอบที่ถูกเป็น A/B/C/D (หรือ 1-4)</li>
+          <li><b className="text-slate-800">ขึ้นบรรทัดใหม่:</b> พิมพ์ <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">\n</code> ในข้อความ เช่น <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">ก) ...\nข) ...</code></li>
+        </ul>
+        <p className="mt-2 text-slate-500">รองรับทั้งไฟล์ที่มีคอลัมน์ set (11 คอลัมน์) และไม่มี set (10 คอลัมน์)</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2.5">
+        <label className="cursor-pointer bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md shadow-amber-600/20 text-xs md:text-sm inline-flex items-center gap-2 transition-all active:scale-95">
+          📤 อัปโหลดไฟล์ CSV
+          <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
+        </label>
+        <button className="bg-white hover:bg-slate-50 text-slate-700 font-bold border border-slate-200 px-4 py-2.5 rounded-xl text-xs md:text-sm inline-flex items-center gap-2 shadow-xs transition-all active:scale-95" onClick={downloadSampleCSV}>
+          📄 ดาวน์โหลดตัวอย่าง
+        </button>
+        <button className="bg-white hover:bg-slate-50 text-amber-700 font-bold border border-amber-200 px-4 py-2.5 rounded-xl text-xs md:text-sm inline-flex items-center gap-2 shadow-xs transition-all active:scale-95" onClick={exportCurrentCSV}>
+          💾 ส่งออกข้อมูลปัจจุบัน
+        </button>
+      </div>
+
+      {importMsg && (
+        <div className={`p-4 rounded-2xl text-xs md:text-sm font-semibold border shadow-xs flex items-center justify-between ${importOk ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'}`}>
+          <span>{importMsg}</span>
+          <button onClick={() => setImportMsg(null)} className="text-slate-400 hover:text-slate-600 font-bold ml-2">✕</button>
         </div>
+      )}
 
-        {/* Subject Filter */}
-        <div className="flex flex-wrap gap-3 mb-6">
-          <button
-            onClick={() => setSelectedSubject(null)}
-            className={`px-5 py-2.5 rounded-xl text-sm font-medium transition border ${
-              !selectedSubject
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            ทั้งหมด ({onetQuestions.length})
+      <div className="pt-2 border-t border-slate-100">
+        <h3 className="text-sm font-extrabold text-slate-800 mb-3 flex items-center gap-2">
+          <span>🗑️</span> ล้างข้อสอบแบบเลือกเงื่อนไข
+        </h3>
+        <div className="flex flex-wrap gap-2.5 items-center mb-4">
+          <select value={fLevel} onChange={(e) => setFLevel(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกระดับชั้น --</option>
+            {levels.map((v) => (
+              <option key={v} value={v}>{escapeHtml(v)}</option>
+            ))}
+          </select>
+          <select value={fYear} onChange={(e) => setFYear(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกปี --</option>
+            {years.map((v) => (
+              <option key={v} value={v}>{escapeHtml(v)}</option>
+            ))}
+          </select>
+          <select value={fSubject} onChange={(e) => setFSubject(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกวิชา --</option>
+            {(Object.keys(subjectInfo) as Array<keyof typeof subjectInfo>).map((k) => (
+              <option key={k} value={k}>{subjectInfo[k].icon} {subjectInfo[k].name}</option>
+            ))}
+          </select>
+          <select value={fSet} onChange={(e) => setFSet(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกชุด --</option>
+            {[...new Set(bank.map(q => q.set || '1'))].sort((a, b) => Number(a) - Number(b)).map(s => (
+              <option key={s} value={s}>ชุดที่ {s}</option>
+            ))}
+          </select>
+          <button className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold border border-rose-200 px-3.5 py-2 rounded-xl text-xs transition-all active:scale-95" onClick={clearFiltered}>
+            ล้างตามเงื่อนไข
           </button>
-          {ONET_SUBJECTS.map(s => (
-            <button
-              key={s}
-              onClick={() => setSelectedSubject(s)}
-              className={`px-5 py-2.5 rounded-xl text-sm font-medium transition border ${
-                selectedSubject === s
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              {s} ({subjectCounts[s] || 0})
-            </button>
-          ))}
         </div>
 
-        {showForm && (
-          <div className="bg-white rounded-2xl shadow p-6 mb-6">
-            <h3 className="font-semibold mb-4">{editingId ? 'แก้ไขข้อสอบ' : 'เพิ่มข้อสอบใหม่'}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium block mb-1">วิชา *</label>
-                <select value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                  <option value="">เลือกวิชา</option>
-                  {ONET_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">ระดับความยาก</label>
-                <select value={form.difficulty} onChange={e => setForm({ ...form, difficulty: parseInt(e.target.value) as 1 | 2 | 3 })} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                  <option value={1}>ง่าย</option>
-                  <option value={2}>ปานกลาง</option>
-                  <option value={3}>ยาก</option>
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium block mb-1">คำถาม *</label>
-                <textarea rows={2} value={form.question_text} onChange={e => setForm({ ...form, question_text: e.target.value })} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="พิมพ์คำถาม..." />
-              </div>
-              {(['A', 'B', 'C', 'D'] as const).map(opt => (
-                <div key={opt}>
-                  <label className="text-sm font-medium block mb-1">ตัวเลือก {opt} {opt === 'A' || opt === 'B' ? '*' : ''}</label>
-                  <input value={form[`option_${opt.toLowerCase()}` as keyof typeof form] as string} onChange={e => setForm({ ...form, [`option_${opt.toLowerCase()}`]: e.target.value })} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder={`ตัวเลือก ${opt}`} />
-                </div>
-              ))}
-              <div>
-                <label className="text-sm font-medium block mb-1">เฉลย *</label>
-                <select value={form.correct_answer} onChange={e => setForm({ ...form, correct_answer: e.target.value as 'A' | 'B' | 'C' | 'D' })} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                  {['A', 'B', 'C', 'D'].map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium block mb-1">คำอธิบายเฉลย</label>
-                <textarea rows={2} value={form.explanation} onChange={e => setForm({ ...form, explanation: e.target.value })} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="อธิบายเหตุผลของเฉลย..." />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={resetForm} className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">ยกเลิก</button>
-              <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">💾 บันทึก</button>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-2xl shadow overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <p className="font-semibold">ข้อสอบทั้งหมด ({filteredQuestions.length} ข้อ)</p>
-          </div>
-          {filteredQuestions.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">
-              <p className="text-4xl mb-3">🎯</p>
-              <p>ยังไม่มีข้อสอบ O-NET</p>
-              <p className="text-sm mt-1">กดปุ่ม "เพิ่มข้อสอบใหม่" หรือ "นำเข้าจากไฟล์" เพื่อเริ่มต้น</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-left">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-500">#</th>
-                    <th className="px-4 py-3 font-medium text-slate-500">วิชา</th>
-                    <th className="px-4 py-3 font-medium text-slate-500">คำถาม</th>
-                    <th className="px-4 py-3 font-medium text-slate-500">เฉลย</th>
-                    <th className="px-4 py-3 font-medium text-slate-500">ระดับ</th>
-                    <th className="px-4 py-3 font-medium text-slate-500">จัดการ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredQuestions.map((q, i) => (
-                    <tr key={q.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${(q as any).subject ? subjectColor((q as any).subject) : 'bg-slate-100 text-slate-500'}`}>
-                          {(q as any).subject || '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 max-w-md">
-                        <p className="truncate">{q.question_text}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-sm">{q.correct_answer}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${difficultyColor(q.difficulty || 2)}`}>{difficultyLabel(q.difficulty || 2)}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1">
-                          <button onClick={() => handleEdit(q)} className="px-2 py-1 text-xs bg-amber-50 text-amber-700 rounded hover:bg-amber-100">✏️ แก้ไข</button>
-                          <button onClick={() => deleteQuestion(Number(q.id))} className="px-2 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100">🗑️ ลบ</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <div className="flex flex-wrap gap-2.5">
+          <button className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-sm transition-all active:scale-95" onClick={clearAll}>
+            🗑️ ล้างข้อสอบทั้งหมด
+          </button>
+          <button className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs transition-all active:scale-95" onClick={restoreDefaults}>
+            ♻️ โหลดข้อมูลเริ่มต้นกลับมา
+          </button>
         </div>
-      </main>
+      </div>
+
+      <div className="pt-2 border-t border-slate-100">
+        <h3 className="text-sm font-extrabold text-slate-800 mb-3 flex items-center gap-2">
+          <span>📊</span> สรุปจำนวนข้อสอบ O-NET
+        </h3>
+        {renderStatsTable()}
+      </div>
     </div>
   );
-}
+
+  /* ===== TAB: manage ===== */
+  const renderManageTab = () => (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-extrabold text-slate-800 mb-3 flex items-center gap-2">
+          <span>🎓</span> จัดการระดับชั้น (ป.6 / ม.3 / ม.6)
+        </h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input
+            type="text"
+            value={newLevel}
+            onChange={(e) => setNewLevel(e.target.value)}
+            placeholder="ระดับชั้นใหม่ เช่น ป.6"
+            className="border border-slate-200 rounded-xl px-3.5 py-2 text-xs md:text-sm bg-white outline-none focus:ring-2 focus:ring-amber-500/30"
+          />
+          <button className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition-all active:scale-95" onClick={addLevel}>
+            ➕ เพิ่มระดับชั้น
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {levels.map((name) => (
+            <span key={name} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 border border-amber-200/80 text-xs font-bold shadow-xs">
+              {escapeHtml(name)}
+              <button onClick={() => removeLevel(name)} className="text-rose-500 hover:text-rose-700 font-black ml-1">✕</button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="pt-2 border-t border-slate-100">
+        <h3 className="text-sm font-extrabold text-slate-800 mb-3 flex items-center gap-2">
+          <span>📅</span> จัดการปี พ.ศ.
+        </h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input
+            type="text"
+            value={newYear}
+            onChange={(e) => setNewYear(e.target.value)}
+            placeholder="ปี พ.ศ. ใหม่ เช่น 2569"
+            className="border border-slate-200 rounded-xl px-3.5 py-2 text-xs md:text-sm bg-white outline-none focus:ring-2 focus:ring-amber-500/30"
+          />
+          <button className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition-all active:scale-95" onClick={addYear}>
+            ➕ เพิ่มปี
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {years.map((y) => (
+            <span key={y} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 border border-amber-200/80 text-xs font-bold shadow-xs">
+              {escapeHtml(y)}
+              <button onClick={() => removeYear(y)} className="text-rose-500 hover:text-rose-700 font-black ml-1">✕</button>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ===== TAB: list ===== */
+  const renderListTab = () => {
+    const filtered = bank.filter((q) =>
+      (!fLevel || q.level === fLevel) &&
+      (!fYear || q.year === fYear) &&
+      (!fSubject || q.subject === fSubject) &&
+      (!fSet || (q.set || '1') === fSet) &&
+      (!fSearch || q.q.toLowerCase().includes(fSearch.toLowerCase()) || q.explain?.toLowerCase().includes(fSearch.toLowerCase())),
+    );
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2.5 items-center">
+          <select value={fLevel} onChange={(e) => setFLevel(e.target.value)} className="border border-slate-200 rounded-xl px-3.5 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกระดับชั้น --</option>
+            {levels.map((v) => (
+              <option key={v} value={v}>{escapeHtml(v)}</option>
+            ))}
+          </select>
+          <select value={fYear} onChange={(e) => setFYear(e.target.value)} className="border border-slate-200 rounded-xl px-3.5 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกปี --</option>
+            {years.map((v) => (
+              <option key={v} value={v}>{escapeHtml(v)}</option>
+            ))}
+          </select>
+          <select value={fSubject} onChange={(e) => setFSubject(e.target.value)} className="border border-slate-200 rounded-xl px-3.5 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกวิชา --</option>
+            {(Object.keys(subjectInfo) as Array<keyof typeof subjectInfo>).map((k) => (
+              <option key={k} value={k}>{subjectInfo[k].icon} {subjectInfo[k].name}</option>
+            ))}
+          </select>
+          <select value={fSet} onChange={(e) => setFSet(e.target.value)} className="border border-slate-200 rounded-xl px-3.5 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30">
+            <option value="">-- ทุกชุด --</option>
+            {[...new Set(bank.map(q => q.set || '1'))].sort((a, b) => Number(a) - Number(b)).map(s => (
+              <option key={s} value={s}>ชุดที่ {s}</option>
+            ))}
+          </select>
+          <div className="relative flex-1 min-w-[180px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <input
+              type="text"
+              value={fSearch}
+              onChange={(e) => setFSearch(e.target.value)}
+              placeholder="ค้นหาคำถาม..."
+              className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs md:text-sm bg-white font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500/30"
+            />
+            {fSearch && (
+              <button onClick={() => setFSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs text-slate-500 font-semibold">พบ {filtered.length} ข้อ</div>
+          <button
+            className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-amber-600/20 transition-all active:scale-95"
+            onClick={startAdd}
+          >
+            ➕ เพิ่มข้อสอบใหม่
+          </button>
+        </div>
+        {renderQuestionList(filtered)}
+      </div>
+    );
+  };
+
+  /* ===== stats ===== */
+  const renderStatsTable = () => {
+    const rows: Array<{ lv: string; yr: string; st: string; sub: string; count: number }> = [];
+    levels.forEach((lv) => {
+      years.forEach((yr) => {
+        const setsInLvYr = [...new Set(bank.filter(b => b.level === lv && b.year === yr).map(b => b.set || '1'))];
+        setsInLvYr.forEach((st) => {
+          (Object.keys(subjectInfo) as Array<keyof typeof subjectInfo>).forEach((sub) => {
+            const count = bank.filter((b) => b.level === lv && b.year === yr && (b.set || '1') === st && b.subject === sub).length;
+            if (count > 0) rows.push({ lv, yr, st, sub, count });
+          });
+        });
+      });
+    });
+    if (rows.length === 0) {
+      return (
+        <div className="text-center py-8 text-slate-400 text-xs md:text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+          <p className="text-3xl mb-1">📭</p>
+          ยังไม่มีข้อมูลข้อสอบในระบบ
+        </div>
+      );
+    }
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+        <table className="w-full text-xs md:text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
+            <tr>
+              <th className="px-4 py-2.5 text-left">ระดับชั้น</th>
+              <th className="px-4 py-2.5 text-left">ปี พ.ศ.</th>
+              <th className="px-4 py-2.5 text-left">ชุด</th>
+              <th className="px-4 py-2.5 text-left">วิชา</th>
+              <th className="px-4 py-2.5 text-right">จำนวนข้อ</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+            {rows.map((r) => (
+              <tr key={`${r.lv}-${r.yr}-${r.st}-${r.sub}`} className="hover:bg-slate-50/80 transition">
+                <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-xs">{escapeHtml(r.lv)}</span></td>
+                <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-xs">{escapeHtml(r.yr)}</span></td>
+                <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 font-bold text-xs">ชุดที่ {r.st}</span></td>
+                <td className="px-4 py-2.5">{subjectInfo[r.sub]?.icon} {subjectInfo[r.sub]?.name}</td>
+                <td className="px-4 py-2.5 text-right font-bold text-slate-900">{r.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="p-3 bg-slate-50 border-t border-slate-100 text-right text-xs text-slate-500 font-semibold">
+          รวมทั้งหมด <strong className="text-amber-600 text-sm font-black">{bank.length}</strong> ข้อ
+        </div>
+      </div>
+    );
+  };
+
+  /* ===== question list ===== */
+  const renderQuestionList = (filtered: OnetBankQuestion[]) => {
+    if (filtered.length === 0) {
+      return (
+        <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+          <p className="text-4xl mb-2">🔍</p>
+          <p className="font-semibold text-slate-600">ไม่พบข้อสอบตามเงื่อนไขที่เลือก</p>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-3">
+        {filtered.map((q) => (
+          <div key={q.id} className="bg-white border border-slate-200/80 hover:border-amber-200 rounded-2xl p-4 md:p-5 shadow-xs transition-all space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700">🎓 {q.level}</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800">📅 {q.year}</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-violet-50 text-violet-700">📋 ชุดที่ {q.set || '1'}</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700">
+                {subjectInfo[q.subject]?.icon || '📌'} {subjectInfo[q.subject]?.name || q.subject}
+              </span>
+            </div>
+            <MathText as="div" className="font-bold text-slate-800 text-sm md:text-base whitespace-pre-line">{q.q}</MathText>
+
+            {q.q_image && (
+              <img src={q.q_image} alt="รูปคำถาม" className="max-h-40 rounded-xl border border-slate-200" />
+            )}
+
+            <div className="bg-slate-50 rounded-xl p-3 text-xs md:text-sm text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {q.choices.map((c, idx) => (
+                <div key={idx} className={`flex flex-col gap-1 p-1.5 rounded-lg ${idx === q.answer ? 'font-bold text-emerald-700 bg-emerald-50/50' : ''}`}>
+                  <div className="whitespace-pre-line">{String.fromCharCode(65 + idx)}. <MathText>{c}</MathText> {idx === q.answer ? '✓' : ''}</div>
+                  {q.choice_images?.[idx] && (
+                    <img src={q.choice_images[idx]} alt={`รูปตัวเลือก ${String.fromCharCode(65 + idx)}`} className="h-16 w-auto object-contain rounded border border-slate-200 self-start" />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {q.explain && (
+              <div className="text-xs text-slate-500 bg-amber-50/50 p-2.5 rounded-xl border border-amber-100/60">
+                💡 <strong>เฉลย:</strong> <MathText className="whitespace-pre-line">{q.explain}</MathText>
+                {q.explain_image && (<img src={q.explain_image} alt="รูปเฉลย" className="mt-2 max-h-32 rounded-lg border border-amber-200" />)}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
+              <button className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all" onClick={() => startEdit(q.id)}>
+                ✏️ แก้ไข
+              </button>
+              <button className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all" onClick={() => deleteOne(q.id)}>
+                🗑️ ลบข้อนี้
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  /* ===== edit modal ===== */
+  const renderEditModal = () => {
+    if (!editingId) return null;
+    return (
+      <div
+        className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) cancelEdit();
+        }}
+      >
+        <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 p-5 text-white">
+            <h3 className="text-base md:text-lg font-black tracking-tight flex items-center gap-2">
+              <span>{modalMode === 'add' ? '➕ เพิ่มข้อสอบ O-NET' : '✏️ แก้ไขข้อสอบ O-NET'}</span>
+            </h3>
+          </div>
+
+          <div className="p-6 space-y-4 text-xs md:text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">🎓 ระดับชั้น</label>
+                <select
+                  value={form.level}
+                  onChange={(e) => setForm(prev => ({ ...prev, level: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                >
+                  {levelOptions()}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">📅 ปี พ.ศ.</label>
+                <select
+                  value={form.year}
+                  onChange={(e) => setForm(prev => ({ ...prev, year: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                >
+                  {yearOptions()}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">📋 ชุดที่</label>
+                <input
+                  type="text"
+                  value={form.set}
+                  onChange={(e) => setForm(prev => ({ ...prev, set: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                  placeholder="เช่น 1, 2, 3"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">📚 วิชา</label>
+                <select
+                  value={form.subject}
+                  onChange={(e) => setForm(prev => ({ ...prev, subject: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+                >
+                  {subjectOptions()}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">❓ คำถาม</label>
+              <textarea
+                rows={2}
+                value={form.q}
+                onChange={(e) => setForm(prev => ({ ...prev, q: e.target.value }))}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+              />
+              <div className="flex items-center gap-2 mt-1.5">
+                <label className="cursor-pointer text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-100 inline-flex items-center gap-1">
+                  📷 แนบรูปภาพคำถาม
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'q_image')} />
+                </label>
+                {form.q_image && (
+                  <>
+                    <img src={form.q_image} alt="รูปคำถาม" className="h-10 rounded-lg border object-cover" />
+                    <button type="button" onClick={() => removeImage('q_image')} className="text-rose-500 text-xs font-bold">✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-2">✅ ตัวเลือก (เลือกวงกลมหน้าข้อที่เป็นคำตอบที่ถูกต้อง)</label>
+              <div className="space-y-2">
+                {[0, 1, 2, 3].map((c) => (
+                  <div key={c} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="onetEditAnswerRadio"
+                      checked={form.answer === c}
+                      onChange={() => setForm(prev => ({ ...prev, answer: c }))}
+                      className="w-4 h-4 accent-amber-600"
+                    />
+                    <span className="w-5 font-bold text-amber-800 text-xs">{String.fromCharCode(65 + c)}.</span>
+                    <input
+                      type="text"
+                      value={form.choices[c]}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setForm(prev => {
+                          const next = [...prev.choices];
+                          next[c] = val;
+                          return { ...prev, choices: next };
+                        });
+                      }}
+                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-amber-500/30"
+                    />
+                    <label className="cursor-pointer text-xs text-slate-400 hover:text-amber-600" title="แนบรูปภาพ">
+                      📷
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, `choice_${c}` as any, c)} />
+                    </label>
+                    {form.choice_images[c] && (
+                      <>
+                        <img src={form.choice_images[c]} alt="" className="h-8 w-8 rounded-lg border object-cover" />
+                        <button type="button" onClick={() => removeImage(`choice_${c}` as any, c)} className="text-rose-500 text-xs">✕</button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">💡 คำอธิบายเฉลย</label>
+              <textarea
+                rows={2}
+                value={form.explain}
+                onChange={(e) => setForm(prev => ({ ...prev, explain: e.target.value }))}
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+              />
+              <div className="flex items-center gap-2 mt-1.5">
+                <label className="cursor-pointer text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-100 inline-flex items-center gap-1">
+                  📷 แนบรูปภาพเฉลย
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'explain_image')} />
+                </label>
+                {form.explain_image && (
+                  <>
+                    <img src={form.explain_image} alt="รูปเฉลย" className="h-10 rounded-lg border object-cover" />
+                    <button type="button" onClick={() => removeImage('explain_image')} className="text-rose-500 text-xs font-bold">✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button type="button" className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50" onClick={cancelEdit}>ยกเลิก</button>
+              <button type="button" className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-600/20 hover:from-amber-700 hover:to-orange-700" onClick={saveEdit}>{modalMode === 'add' ? '💾 เพิ่มข้อสอบ' : '💾 บันทึกการแก้ไข'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /* ===== main render ===== */
+  return (
+    <div className="space-y-6">
+      {/* Sub Tabs */}
+      <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-4">
+        <button
+          className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all ${
+            tab === 'import'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-600/20'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+          onClick={() => { setTab('import'); setImportMsg(null); }}
+        >
+          📤 นำเข้าข้อมูล
+        </button>
+        <button
+          className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all ${
+            tab === 'manage'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-600/20'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+          onClick={() => setTab('manage')}
+        >
+          🎓 ระดับชั้น &amp; ปี
+        </button>
+        <button
+          className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all ${
+            tab === 'list'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-600/20'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+          onClick={() => setTab('list')}
+        >
+          📋 รายการข้อสอบ
+        </button>
+      </div>
+
+      {tab === 'import' && renderImportTab()}
+      {tab === 'manage' && renderManageTab()}
+      {tab === 'list' && renderListTab()}
+
+      {editingId && renderEditModal()}
+    </div>
+  );
+};
+
+export default AdminQuestionsONetBank;

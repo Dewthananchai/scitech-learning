@@ -122,6 +122,25 @@ export default function AdminAttendance() {
     });
   };
 
+  // Auto-load roster: mark every student of the grade as present unless already recorded
+  const handleAutoFillStudents = (sessionId: number) => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const students = STUDENTS_BY_GRADE[session.grade_level] || [];
+    students.forEach(st => {
+      const exists = records.find(r => r.session_id === sessionId && r.student_id === st.id);
+      if (!exists) {
+        addRecord({
+          session_id: sessionId,
+          student_id: st.id,
+          student_name: st.name,
+          grade_level: session.grade_level,
+          status: 'present',
+        });
+      }
+    });
+  };
+
   const toggleRecordStatus = (recordId: number) => {
     const record = records.find(r => r.id === recordId);
     if (!record) return;

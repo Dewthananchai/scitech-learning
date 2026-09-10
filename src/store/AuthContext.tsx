@@ -9,6 +9,7 @@ export interface AuthUser {
   role: 'admin' | 'student';
   grade_level?: number;
   classroom?: string;
+  school_name?: string;
   profile_image?: string;
 }
 
