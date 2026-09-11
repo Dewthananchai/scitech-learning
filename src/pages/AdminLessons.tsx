@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { mockSubjects } from '../data/mockData';
 import { useAppStore } from '../store/AppContext';
 import { GRADES } from '../types';
 import type { Lesson } from '../types';
@@ -39,7 +38,7 @@ function renderMarkdown(content: string) {
 }
 
 export default function AdminLessons() {
-  const { lessons, deleteLesson, togglePublish } = useAppStore();
+  const { lessons, deleteLesson, togglePublish , subjects } = useAppStore();
   const [selectedGrade, setSelectedGrade] = useState<number | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<number | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
@@ -47,7 +46,7 @@ export default function AdminLessons() {
   const viewLesson = viewId !== null ? lessons.find(l => l.id === viewId) : null;
 
   const getGradeForLesson = (l: Lesson): number => {
-    const subject = mockSubjects.find(s => s.id === l.subject_unit_id);
+    const subject = subjects.find(s => s.id === l.subject_unit_id);
     return subject?.grade_level || 0;
   };
 
@@ -64,7 +63,7 @@ export default function AdminLessons() {
     return counts;
   }, [lessons]);
 
-  const gradeSubjects = useMemo(() => selectedGrade !== null ? mockSubjects.filter(s => s.grade_level === selectedGrade) : [], [selectedGrade]);
+  const gradeSubjects = useMemo(() => selectedGrade !== null ? subjects.filter(s => s.grade_level === selectedGrade) : [], [selectedGrade]);
 
   const unitCounts = useMemo(() => {
     const counts: Record<number, number> = {};
@@ -222,7 +221,7 @@ export default function AdminLessons() {
             {/* Lessons Card View (Mobile) */}
             <div className="md:hidden space-y-3">
               {filteredLessons.map(l => {
-                const subject = mockSubjects.find(s => s.id === l.subject_unit_id);
+                const subject = subjects.find(s => s.id === l.subject_unit_id);
                 const grade = getGradeForLesson(l);
                 const gradeInfo = GRADES.find(g => g.level === grade);
                 const mediaLabel = getMediaLabel(l);
@@ -313,7 +312,7 @@ export default function AdminLessons() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredLessons.map((l, idx) => {
-                      const subject = mockSubjects.find(s => s.id === l.subject_unit_id);
+                      const subject = subjects.find(s => s.id === l.subject_unit_id);
                       const grade = getGradeForLesson(l);
                       const gradeInfo = GRADES.find(g => g.level === grade);
                       const mediaLabel = getMediaLabel(l);
@@ -404,7 +403,7 @@ export default function AdminLessons() {
                   <h2 className="text-xl font-bold">{viewLesson.title}</h2>
                   <div className="flex items-center gap-3 mt-2 text-xs text-emerald-100 flex-wrap">
                     {(() => {
-                      const s = mockSubjects.find(su => su.id === viewLesson.subject_unit_id);
+                      const s = subjects.find(su => su.id === viewLesson.subject_unit_id);
                       return s ? <span>ป.{s.grade_level} • {s.unit_code} {s.unit_name}</span> : null;
                     })()}
                     <span>⏱ {viewLesson.estimated_minutes} นาที</span>

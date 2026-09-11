@@ -1,6 +1,5 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { mockSubjects } from '../data/mockData';
 import { useAppStore } from '../store/AppContext';
 import type { Question, QuizResult } from '../types';
 
@@ -138,9 +137,9 @@ interface ShuffledQuestion extends Question {
 export default function QuizPage() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
-  const { lessons, questions, quizzes } = useAppStore();
+  const { lessons, questions, quizzes , subjects } = useAppStore();
   const lesson = lessons.find(l => l.id === Number(lessonId));
-  const subject = lesson ? mockSubjects.find(s => s.id === lesson.subject_unit_id) : null;
+  const subject = lesson ? subjects.find(s => s.id === lesson.subject_unit_id) : null;
   const quizConfig = quizzes.find(q => q.lesson_id === Number(lessonId));
 
   const [started, setStarted] = useState(false);

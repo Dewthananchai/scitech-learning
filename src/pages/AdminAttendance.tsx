@@ -1,46 +1,12 @@
 import { useState, useMemo } from 'react';
-import { useAttendance } from '../store/useStore';
+import { useAttendance, useUsers } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import MobileHeader from '../components/MobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
-// Demo students by grade
-const STUDENTS_BY_GRADE: Record<number, { id: number; name: string }[]> = {
-  1: [
-    { id: 11, name: 'ด.ญ. ปุณญ่า สดใส' },
-    { id: 21, name: 'ด.ช. อาทิตย์ ฉายแสง' },
-    { id: 22, name: 'ด.ญ. จันทร์เจ้า สว่าง' },
-    { id: 23, name: 'ด.ช. วิชญ์ พัฒนา' },
-  ],
-  2: [
-    { id: 12, name: 'ด.ช. นพณัฐ น้ำใจ' },
-    { id: 24, name: 'ด.ญ. ดารารัตน์ บุญมี' },
-    { id: 25, name: 'ด.ช. พลวัฒน์ ทองดี' },
-  ],
-  3: [
-    { id: 10, name: 'ด.ช. ภูมิภัทร รักเรียน' },
-    { id: 26, name: 'ด.ญ. ศรันย์ สดใส' },
-    { id: 27, name: 'ด.ช. กฤษณะ พัฒนา' },
-    { id: 28, name: 'ด.ญ. ชนิดา สุขใจ' },
-  ],
-  4: [
-    { id: 29, name: 'ด.ช. นเรศ ชาญชัย' },
-    { id: 30, name: 'ด.ญ. บุษบา มาลัย' },
-    { id: 31, name: 'ด.ช. ปวเรศ รุ่งเรือง' },
-  ],
-  5: [
-    { id: 32, name: 'ด.ช. ภัทร วงศ์ประเสริฐ' },
-    { id: 33, name: 'ด.ญ. มณี สดใส' },
-    { id: 34, name: 'ด.ช. ยุคล ชนะใจ' },
-  ],
-  6: [
-    { id: 35, name: 'ด.ช. รัฐภูมิ ศรีสุวรรณ' },
-    { id: 36, name: 'ด.ญ. วรรณพร เจริญสุข' },
-    { id: 37, name: 'ด.ช. อรรถพล นนท์' },
-  ],
-};
+/* รายชื่อนักเรียนดึงจากทะเบียนผู้ใช้จริง (scitech_users) — ไม่มีรายชื่อตัวอย่าง */
 
 const GRADE_OPTIONS = [1, 2, 3, 4, 5, 6];
 const STATUS_LABELS: Record<string, { label: string; color: string; icon: string }> = {
@@ -65,11 +31,19 @@ export default function AdminAttendance() {
     grade_level: 1,
   });
 
+  const { users } = useUsers();
+
   const filteredSessions = useMemo(() => {
     let list = [...sessions];
     if (gradeFilter) list = list.filter(s => s.grade_level === gradeFilter);
     return list.sort((a, b) => b.date.localeCompare(a.date));
   }, [sessions, gradeFilter]);
+
+  /** รายชื่อนักเรียนตามชั้น — จากทะเบียนผู้ใช้จริงเท่านั้น */
+  const studentsOfGrade = (grade: number): { id: number; name: string }[] =>
+    users
+      .filter(u => u.role === 'student' && u.is_active && u.grade_level === grade)
+      .map(u => ({ id: u.id, name: u.full_name }));
 
   const activeSession = sessions.find(s => s.id === selectedSession);
   const sessionRecords = useMemo(() => {
@@ -107,7 +81,7 @@ export default function AdminAttendance() {
   const handleMarkAbsent = (sessionId: number) => {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
-    const students = STUDENTS_BY_GRADE[session.grade_level] || [];
+    const students = studentsOfGrade(session.grade_level);
     students.forEach(st => {
       const exists = records.find(r => r.session_id === sessionId && r.student_id === st.id);
       if (!exists) {
@@ -126,7 +100,7 @@ export default function AdminAttendance() {
   const handleAutoFillStudents = (sessionId: number) => {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
-    const students = STUDENTS_BY_GRADE[session.grade_level] || [];
+    const students = studentsOfGrade(session.grade_level);
     students.forEach(st => {
       const exists = records.find(r => r.session_id === sessionId && r.student_id === st.id);
       if (!exists) {
@@ -332,7 +306,7 @@ export default function AdminAttendance() {
                     <div>
                       <p className="text-xs font-bold text-slate-600 mb-2">คลิกเพื่อเปลี่ยนสถานะนักเรียน:</p>
                       <div className="flex flex-wrap gap-2">
-                        {(STUDENTS_BY_GRADE[activeSession.grade_level] || []).map(st => {
+                        {studentsOfGrade(activeSession.grade_level).map(st => {
                           const existing = sessionRecords.find(r => r.student_id === st.id);
                           const statusInfo = existing ? STATUS_LABELS[existing.status] : null;
                           return (

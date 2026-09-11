@@ -26,29 +26,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Demo users
-const DEMO_USERS: Record<string, { password: string; user: AuthUser }> = {
-  'admin': {
-    password: '1234',
-    user: { id: 1, username: 'admin', full_name: 'ครูวิภาวดี ใจดี', role: 'admin' },
-  },
-  'teacher': {
-    password: '1234',
-    user: { id: 2, username: 'teacher', full_name: 'ครูสมชาย รักสอน', role: 'admin' },
-  },
-  'student': {
-    password: '1234',
-    user: { id: 10, username: 'student', full_name: 'ด.ช. ภูมิภัทร รักเรียน', role: 'student', grade_level: 3, classroom: '3/1' },
-  },
-  'poon': {
-    password: '1234',
-    user: { id: 11, username: 'poon', full_name: 'ด.ญ. ปุณญ่า สดใส', role: 'student', grade_level: 1, classroom: '1/2' },
-  },
-  'pan01': {
-    password: '1234',
-    user: { id: 38, username: 'pan01', full_name: 'ด.ญ. ปัญญ่า สดใส', role: 'student', grade_level: 1, classroom: '1/1' },
-  },
-};
+/**
+ * ระบบผู้ใช้จริง — ตรวจสอบกับทะเบียนผู้ใช้ใน localStorage (scitech_users) เท่านั้น
+ * ไม่มีบัญชีทดลอง (demo) อีกต่อไป — ผู้ดูแลระบบสร้างบัญชีอื่นทั้งหมดผ่านหน้าจัดการผู้ใช้
+ */
+const USERS_KEY = 'scitech_users';
+const PASSWORDS_KEY = 'scitech_user_passwords';
+
+function findStoredUser(username: string): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem(USERS_KEY);
+    if (!raw) return null;
+    const users = JSON.parse(raw);
+    const found = users.find((u: Record<string, unknown>) =>
+      String(u.username).toLowerCase() === username.toLowerCase().trim() && u.is_active !== false
+    );
+    return found ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getStoredPassword(username: string, fallback: unknown): string {
+  try {
+    const raw = localStorage.getItem(PASSWORDS_KEY);
+    if (!raw) return String(fallback ?? '');
+    const passwords = JSON.parse(raw);
+    return passwords[username.toLowerCase().trim()] ?? String(fallback ?? '');
+  } catch {
+    return String(fallback ?? '');
+  }
+}
 
 const STORAGE_KEY = 'scitech_auth_user';
 
@@ -92,47 +100,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback((username: string, password: string) => {
     const key = username.toLowerCase().trim();
-    let entry = DEMO_USERS[key];
-    // Also check localStorage users (from admin user management)
-    if (!entry) {
-      try {
-        const storedUsers = localStorage.getItem('scitech_users');
-        if (storedUsers) {
-          const users = JSON.parse(storedUsers);
-          const found = users.find((u: any) => u.username === key && u.is_active);
-          if (found) {
-            entry = {
-              password: found.password,
-              user: {
-                id: found.id,
-                username: found.username,
-                full_name: found.full_name,
-                role: found.role,
-                grade_level: found.grade_level,
-                classroom: found.class_name,
-              },
-            };
-          }
-        }
-      } catch {}
-    }
-    if (!entry) {
+    const found = findStoredUser(key);
+    if (!found) {
       return { success: false, error: 'ไม่พบผู้ใช้งานนี้ในระบบ' };
     }
-    // Check password (also support stored password overrides)
-    let actualPassword = entry.password;
-    try {
-      const storedPasswords = localStorage.getItem('scitech_user_passwords');
-      if (storedPasswords) {
-        const passwords = JSON.parse(storedPasswords);
-        if (passwords[key]) actualPassword = passwords[key];
-      }
-    } catch {}
+    const actualPassword = getStoredPassword(key, found.password);
     if (actualPassword !== password) {
       return { success: false, error: 'รหัสผ่านไม่ถูกต้อง' };
     }
-    setUser(entry.user);
-    saveUser(entry.user);
+    const entry: AuthUser = {
+      id: Number(found.id),
+      username: String(found.username),
+      full_name: String(found.full_name ?? found.username),
+      role: found.role === 'teacher' ? 'admin' : (found.role as 'admin' | 'student'),
+      grade_level: found.grade_level != null ? Number(found.grade_level) : undefined,
+      classroom: found.class_name != null ? String(found.class_name) : undefined,
+      school_name: found.school_name != null ? String(found.school_name) : undefined,
+    };
+    setUser(entry);
+    saveUser(entry);
     return { success: true };
   }, []);
 
@@ -146,9 +132,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
       saveUser(updated);
-      // Also update in DEMO_USERS
-      const entry = Object.values(DEMO_USERS).find(e => e.user.id === prev.id);
-      if (entry) entry.user = updated;
+      // sync กลับไปยังทะเบียนผู้ใช้ใน localStorage ด้วย
+      try {
+        const raw = localStorage.getItem(USERS_KEY);
+        if (raw) {
+          const users = JSON.parse(raw);
+          localStorage.setItem(USERS_KEY, JSON.stringify(users.map((u: Record<string, unknown>) =>
+            Number(u.id) === prev.id
+              ? { ...u, full_name: updated.full_name, grade_level: updated.grade_level, class_name: updated.classroom, school_name: updated.school_name, profile_image: updated.profile_image }
+              : u
+          )));
+        }
+      } catch {}
       return updated;
     });
   }, []);
@@ -156,14 +151,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const changePassword = useCallback((newPassword: string) => {
     setUser(prev => {
       if (!prev) return prev;
-      // Update password in DEMO_USERS
-      const entry = Object.values(DEMO_USERS).find(e => e.user.id === prev.id);
-      if (entry) entry.password = newPassword;
-      // Save to localStorage
-      const stored = localStorage.getItem('scitech_user_passwords');
-      const passwords: Record<string, string> = stored ? JSON.parse(stored) : {};
-      passwords[prev.username] = newPassword;
-      localStorage.setItem('scitech_user_passwords', JSON.stringify(passwords));
+      // เขียนทับรหัสใน scitech_user_passwords (ทับ seed ของทะเบียนผู้ใช้ด้วย)
+      try {
+        const stored = localStorage.getItem(PASSWORDS_KEY);
+        const passwords: Record<string, string> = stored ? JSON.parse(stored) : {};
+        passwords[prev.username.toLowerCase()] = newPassword;
+        localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
+      } catch {}
+      try {
+        const raw = localStorage.getItem(USERS_KEY);
+        if (raw) {
+          const users = JSON.parse(raw);
+          localStorage.setItem(USERS_KEY, JSON.stringify(users.map((u: Record<string, unknown>) =>
+            Number(u.id) === prev.id ? { ...u, password: newPassword } : u
+          )));
+        }
+      } catch {}
       return prev;
     });
   }, []);

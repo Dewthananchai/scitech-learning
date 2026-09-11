@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { useMemo } from 'react';
-import { mockSubjects } from '../data/mockData';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import { useWorksheets, useUsers } from '../store/useStore';
@@ -9,7 +8,7 @@ import MobileHeader from '../components/MobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 export default function AdminDashboard() {
-  const { lessons, questions } = useAppStore();
+  const { lessons, questions, subjects } = useAppStore();
   const { user } = useAuth();
   const { worksheets } = useWorksheets();
   const { users } = useUsers();
@@ -238,7 +237,7 @@ export default function AdminDashboard() {
               ) : (
                 <div className="space-y-2.5">
                   {lessons.slice(-5).reverse().map(lesson => {
-                    const subject = mockSubjects.find(s => s.id === lesson.subject_unit_id);
+                    const subject = subjects.find(s => s.id === lesson.subject_unit_id);
                     const gradeInfo = subject ? { label: `ป.${subject.grade_level}` } : null;
                     return (
                       <div
@@ -297,7 +296,7 @@ export default function AdminDashboard() {
               </div>
 
               <div className="p-4 md:p-5 space-y-2.5">
-                {mockSubjects.slice(0, 4).map(sub => (
+                {subjects.slice(0, 4).map(sub => (
                   <div key={sub.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                     <div>
                       <span className="text-[10px] font-bold bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full">
@@ -320,7 +319,7 @@ export default function AdminDashboard() {
                 to="/admin/units"
                 className="w-full block text-center py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold text-xs rounded-xl transition-all"
               >
-                ดูหน่วยการเรียนรู้ทั้งหมด ({mockSubjects.length} หน่วย) →
+                ดูหน่วยการเรียนรู้ทั้งหมด ({subjects.length} หน่วย) →
               </Link>
             </div>
           </div>

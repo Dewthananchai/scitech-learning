@@ -5,7 +5,6 @@ import {
   ensureOnetBankData,
   loadLevelList,
   loadOnetYearList,
-  seedOnetAll,
   subjectInfo,
   ONET_QUESTION_KEY,
   ONET_LEVELS_KEY,
@@ -301,16 +300,6 @@ export const AdminQuestionsONetBank: React.FC = () => {
     }
   }, [persistBank]);
 
-  const restoreDefaults = useCallback(() => {
-    if (confirm('ต้องการโหลดข้อมูลเริ่มต้นกลับมา ใช่หรือไม่? (จะเพิ่มเข้าโดยไม่ลบข้อมูลที่มีอยู่)')) {
-      const seeds = seedOnetAll();
-      const existIds = new Set(bank.map((b) => b.id));
-      const toAdd = seeds.filter((s) => !existIds.has(s.id));
-      persistBank([...bank, ...toAdd]);
-      setImportMsg('โหลดข้อมูลเริ่มต้นเรียบร้อยแล้ว');
-      setImportOk(true);
-    }
-  }, [bank, persistBank]);
 
   const deleteOne = useCallback((id: string) => {
     if (confirm('ลบข้อสอบข้อนี้ ใช่หรือไม่?')) {
@@ -553,9 +542,6 @@ export const AdminQuestionsONetBank: React.FC = () => {
         <div className="flex flex-wrap gap-2.5">
           <button className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-sm transition-all active:scale-95" onClick={clearAll}>
             🗑️ ล้างข้อสอบทั้งหมด
-          </button>
-          <button className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs transition-all active:scale-95" onClick={restoreDefaults}>
-            ♻️ โหลดข้อมูลเริ่มต้นกลับมา
           </button>
         </div>
       </div>

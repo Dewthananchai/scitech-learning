@@ -6,6 +6,7 @@ import { LayoutProvider } from './store/LayoutContext'
 import { AuthProvider } from './store/AuthContext'
 import App from './App'
 import { initCloudSync, cloudSyncConfigured } from './lib/cloudSync'
+import { runProductionResetIfNeeded } from './lib/productionReset'
 import './index.css'
 
 function boot() {
@@ -24,10 +25,12 @@ function boot() {
   )
 }
 
-// ถ้าตั้งค่า Supabase ไว้: ดึงข้อมูลล่าสุดจากคลาวด์ก่อนเปิดแอป (สปลาช 1.5 วิ)
+// ถ้าตั้งค่า Supabase ไว้: ล้างข้อมูลตัวอย่างครั้งแรก → ดึงข้อมูลล่าสุดจากคลาวด์ → เปิดแอป (สปลาช 2 วิ)
 if (cloudSyncConfigured()) {
-  const timeout = new Promise<void>(res => setTimeout(res, 1500))
-  Promise.race([initCloudSync(), timeout]).finally(boot)
-} else {
-  boot()
+  const timeout = new Promise<void>(res => setTimeout(res, 2000))
+  Promise.race([
+    runProductionResetIfNeeded().then(() => initCloudSync()),
+    timeout,
+  ]).finally(boot)} else {
+  runProductionResetIfNeeded().finally(boot)
 }

@@ -173,52 +173,7 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              {/* Demo Accounts */}
-              <div className="mt-6 pt-4 border-t border-slate-100">
-                <p className="text-xs text-slate-400 text-center mb-3">บัญชีทดสอบ (รหัสผ่าน: 1234)</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {selectedRole === 'admin' ? (
-                    <>
-                      <button
-                        onClick={() => { setUsername('admin'); setPassword('1234'); }}
-                        className="text-xs bg-blue-50 text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-100 transition"
-                      >
-                        👨‍🏫 admin (แอดมิน)
-                      </button>
-                      <button
-                        onClick={() => { setUsername('teacher'); setPassword('1234'); }}
-                        className="text-xs bg-indigo-50 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-100 transition"
-                      >
-                        👨‍🏫 teacher (ครู)
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => { setUsername('student'); setPassword('1234'); }}
-                        className="text-xs bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg hover:bg-emerald-100 transition"
-                      >
-                        🎒 student (ป.3)
-                      </button>
-                      <button
-                        onClick={() => { setUsername('poon'); setPassword('1234'); }}
-                        className="text-xs bg-teal-50 text-teal-700 px-3 py-2 rounded-lg hover:bg-teal-100 transition"
-                      >                        🎒 poon (ป.1)
-                       </button>
-                     </>
-                   )}
-                   {(
-                     <>
-                       <button
-                         onClick={() => { setSelectedRole('student'); setUsername('pan01'); setPassword('1234'); }}
-                         className="text-xs bg-teal-50 text-teal-700 px-3 py-2 rounded-lg hover:bg-teal-100 transition"
-                       >
-                         🎒 pan01 (ป.1)
-                       </button>
-                     </>
-                   )}
-                 </div>
-              </div>
+              {/* บัญชีใช้งานจริง — ไม่มีบัญชีทดสอบ */}
             </div>
           )}
 

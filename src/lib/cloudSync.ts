@@ -57,7 +57,7 @@ export const cloudSyncConfigured = (): boolean =>
   Boolean(SUPABASE_URL && SUPABASE_ANON_KEY &&
     /^https?:\/\//.test(SUPABASE_URL) && SUPABASE_ANON_KEY.length > 20);
 
-function getClient(): SupabaseClient | null {
+export function getClient(): SupabaseClient | null {
   if (!cloudSyncConfigured()) return null;
   if (!client) {
     client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { mockSubjects } from '../data/mockData';
 import { useAppStore } from '../store/AppContext';
 import { useLessonProgress, useQuestions, useLessonSession } from '../store/useStore';
 import { useAuth } from '../store/AuthContext';
@@ -47,10 +46,10 @@ type Step = 'pre-quiz' | 'pre-result' | 'content' | 'post-quiz' | 'result';
 
 export default function LessonView() {
   const { id } = useParams();
-  const { lessons } = useAppStore();
+  const { lessons , subjects } = useAppStore();
   const { questions: allQuestions } = useQuestions();
   const lesson = lessons.find(l => l.id === Number(id));
-  const subject = lesson ? mockSubjects.find(s => s.id === lesson.subject_unit_id) : null;
+  const subject = lesson ? subjects.find(s => s.id === lesson.subject_unit_id) : null;
   const { markCompleted } = useLessonProgress();
   const { user, isStudent } = useAuth();
   const { startLesson, completeLesson, getStatus, updateElapsed, getElapsed } = useLessonSession();

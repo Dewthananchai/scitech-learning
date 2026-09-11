@@ -1,8 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { mockLessons, mockSubjects } from '../data/mockData';
 import { useAppStore } from '../store/AppContext';
 import { GRADES, ONET_SUBJECTS, M1_SUBJECTS } from '../types';
-import type { Question } from '../types';
+import type { Question, SubjectUnit } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
 import MobileHeader from '../components/MobileHeader';
 import { M1BankContent } from './AdminQuestionsM1';
@@ -61,18 +60,18 @@ function mapHeaderToField(header: string): string {
   return map[h] || h;
 }
 
-function resolveSubjectId(unitName: string, unitCode: string, gradeLevel: string): number {
+function resolveSubjectId(unitName: string, unitCode: string, gradeLevel: string, subjects: SubjectUnit[]): number {
   if (unitCode) {
-    const byCode = mockSubjects.find(s => s.unit_code.toUpperCase() === unitCode.toUpperCase());
+    const byCode = subjects.find(s => s.unit_code.toUpperCase() === unitCode.toUpperCase());
     if (byCode) return byCode.id;
   }
   if (unitName) {
-    const byName = mockSubjects.find(s => s.unit_name.includes(unitName) || unitName.includes(s.unit_name));
+    const byName = subjects.find(s => s.unit_name.includes(unitName) || unitName.includes(s.unit_name));
     if (byName) return byName.id;
   }
   if (gradeLevel) {
     const gradeNum = Number(gradeLevel);
-    const firstSubject = mockSubjects.find(s => s.grade_level === gradeNum);
+    const firstSubject = subjects.find(s => s.grade_level === gradeNum);
     if (firstSubject) return firstSubject.id;
   }
   return 1;
@@ -120,7 +119,7 @@ const difficultyColor = (d: number) => d === 1 ? 'bg-green-100 text-green-700' :
 
 // ===== Main Component =====
 export default function AdminQuestions() {
-  const { questions, addQuestion, addQuestionsBatch, updateQuestion, deleteQuestion, deleteQuestionsByCategory } = useAppStore();
+  const { questions, addQuestion, addQuestionsBatch, updateQuestion, deleteQuestion, deleteQuestionsByCategory, subjects, lessons } = useAppStore();
   const [activeTab, setActiveTab] = useState<TabKey>('lesson');
 
   // === Lesson Questions State ===
@@ -170,7 +169,7 @@ export default function AdminQuestions() {
   const lessonQuestions = useMemo(() => questions.filter(q => !q.category || q.category === 'lesson'), [questions]);
 
   const getGradeForQuestion = (q: Question): number => {
-    const subject = mockSubjects.find(s => s.id === q.subject_unit_id);
+    const subject = subjects.find(s => s.id === q.subject_unit_id);
     return subject?.grade_level || 0;
   };
 
@@ -187,7 +186,7 @@ export default function AdminQuestions() {
     return counts;
   }, [lessonQuestions]);
 
-  const gradeSubjects = useMemo(() => selectedGrade !== null ? mockSubjects.filter(s => s.grade_level === selectedGrade) : [], [selectedGrade]);
+  const gradeSubjects = useMemo(() => selectedGrade !== null ? subjects.filter(s => s.grade_level === selectedGrade) : [], [selectedGrade]);
 
   const unitCounts = useMemo(() => {
     const counts: Record<number, number> = {};
@@ -224,8 +223,8 @@ export default function AdminQuestions() {
 
   // === Lesson form helpers ===
   const formGrade = lessonForm.grade_level ? Number(lessonForm.grade_level) : null;
-  const filteredSubjects = formGrade ? mockSubjects.filter(s => s.grade_level === formGrade) : mockSubjects;
-  const filteredLessons = formGrade ? mockLessons.filter(l => { const s = mockSubjects.find(su => su.id === l.subject_unit_id); return s?.grade_level === formGrade; }) : mockLessons;
+  const filteredSubjects = formGrade ? subjects.filter(s => s.grade_level === formGrade) : subjects;
+  const filteredLessons = formGrade ? lessons.filter(l => { const s = subjects.find(su => su.id === l.subject_unit_id); return s?.grade_level === formGrade; }) : lessons;
 
   const resetLessonForm = () => setLessonForm({ question_text: '', lesson_id: '', subject_unit_id: '', grade_level: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_answer: 'A', explanation: '', difficulty: 1 });
 
@@ -338,9 +337,9 @@ export default function AdminQuestions() {
   const handleLessonImport = () => {
     setLessonImporting(true);
     const newQs = lessonImportData.map(q => {
-      const subjectId = resolveSubjectId(q.subject_unit_id, q.subject_unit_id, q.grade_level);
+      const subjectId = resolveSubjectId(q.subject_unit_id, q.subject_unit_id, q.grade_level, subjects);
       let lessonId = Number(q.lesson_id) || undefined;
-      if (!lessonId && q.lesson_id) { const found = mockLessons.find(l => l.title.includes(q.lesson_id)); lessonId = found?.id; }
+      if (!lessonId && q.lesson_id) { const found = lessons.find(l => l.title.includes(q.lesson_id)); lessonId = found?.id; }
       return { subject_unit_id: subjectId, lesson_id: lessonId, question_text: q.question_text, question_type: 'multiple_choice' as const, option_a: q.option_a, option_b: q.option_b, option_c: q.option_c, option_d: q.option_d, correct_answer: q.correct_answer, explanation: q.explanation, difficulty: Math.min(Math.max(q.difficulty, 1), 3), is_active: true };
     });
     addQuestionsBatch(newQs);
@@ -469,6 +468,7 @@ export default function AdminQuestions() {
                 gradeCounts={gradeCounts}
                 gradeSubjects={gradeSubjects}
                 unitCounts={unitCounts}
+                subjects={subjects}
                 showImport={lessonShowImport}
                 importData={lessonImportData}
                 importFileName={lessonImportFileName}
@@ -515,6 +515,7 @@ function LessonTab(props: {
   formGrade: number | null; filteredSubjects: any[]; filteredLessons: any[];
   selectedGrade: number | null; selectedUnit: number | null;
   gradeCounts: Record<number, number>; gradeSubjects: any[]; unitCounts: Record<number, number>;
+  subjects: SubjectUnit[];
   showImport: boolean; importData: any[]; importFileName: string; importError: string; importing: boolean;
   fileRef: React.RefObject<HTMLInputElement>;
   getGradeForQuestion: (q: Question) => number;
@@ -526,7 +527,7 @@ function LessonTab(props: {
   onDownloadSample: () => void; onCancelForm: () => void; onCancelImport: () => void;
 }) {
   const { questions, totalQuestions, showForm, editId, form, formGrade, filteredSubjects, filteredLessons,
-    selectedGrade, selectedUnit, gradeCounts, gradeSubjects, unitCounts,
+    selectedGrade, selectedUnit, gradeCounts, gradeSubjects, unitCounts, subjects,
     showImport, importData, importFileName, importError, importing, fileRef,
     getGradeForQuestion, onToggleForm, onToggleImport, onUpdateField, onSubmit, onEdit, onDelete,
     onSetGrade, onSetUnit, onFileSelect, onImport, onDownloadSample, onCancelForm, onCancelImport } = props;
@@ -691,7 +692,7 @@ function LessonTab(props: {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     {selectedGrade === null && gradeInfo && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${gradeInfo.color}`}>{gradeInfo.label}</span>}
-                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium">{mockSubjects.find(s => s.id === q.subject_unit_id)?.unit_code || '-'}</span>
+                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium">{subjects.find(s => s.id === q.subject_unit_id)?.unit_code || '-'}</span>
                     <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold">{q.correct_answer}</span>
                   </div>
                   <p className="text-sm text-gray-800 line-clamp-2">{q.question_text}</p>
@@ -737,7 +738,7 @@ function LessonTab(props: {
                       <td className="py-3 px-3 text-gray-400">{idx + 1}</td>
                       <td className="py-3 px-3 max-w-[250px] truncate">{q.question_text}</td>
                       {selectedGrade === null && <td className="py-3 px-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${gradeInfo?.color || ''}`}>{gradeInfo?.label || '-'}</span></td>}
-                      <td className="py-3 px-3"><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-medium">{mockSubjects.find(s => s.id === q.subject_unit_id)?.unit_code || '-'}</span></td>
+                      <td className="py-3 px-3"><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-medium">{subjects.find(s => s.id === q.subject_unit_id)?.unit_code || '-'}</span></td>
                       <td className="py-3 px-3"><span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">{q.correct_answer}</span></td>
                       <td className="py-3 px-3"><span className={`px-2 py-1 rounded-full text-xs ${difficultyColor(q.difficulty)}`}>{difficultyLabel(q.difficulty)}</span></td>
                       <td className="py-3 px-3 text-center">

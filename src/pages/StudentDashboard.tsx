@@ -3,13 +3,12 @@ import { useMemo } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { useLessonSession, useLessonProgress, useMissions, useAnnouncements, useWorksheets, useWorksheetSubmissions } from '../store/useStore';
 import { useAuth } from '../store/AuthContext';
-import { mockSubjects } from '../data/mockData';
 import StudentNavigationBar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
 import { STUDENT_THEME_CSS } from '../styles/studentTheme';
 
 export default function StudentDashboard() {
-  const { lessons } = useAppStore();
+  const { lessons , subjects } = useAppStore();
   const { user } = useAuth();
   const { getStatus } = useLessonSession();
   const { isLessonCompleted } = useLessonProgress();
@@ -432,7 +431,7 @@ export default function StudentDashboard() {
 
               {latestInProgress ? (
                 (() => {
-                  const subject = mockSubjects.find(s => s.id === latestInProgress.subject_unit_id);
+                  const subject = subjects.find(s => s.id === latestInProgress.subject_unit_id);
                   const gradeLabel = subject?.grade_level ? `ป.${subject.grade_level}` : '';
                   return (
                     <div>

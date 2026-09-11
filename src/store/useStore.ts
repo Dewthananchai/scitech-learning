@@ -1,6 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { mockLessons, mockQuestions, mockQuizzes, mockSubjects } from '../data/mockData';
-import { onetSampleQuestions } from '../data/onetSampleQuestions';
 import type { Lesson, Question, Quiz, SubjectUnit, Announcement, CalendarEvent, AttendanceSession, AttendanceRecord, Mission, MissionCompletion, LessonProgress, DailyAutoMission, LessonSession, Worksheet, WorksheetSubmission } from '../types';
 import { worksheetApi, submissionApi } from '../api/worksheetApi';
 
@@ -33,17 +31,18 @@ function saveToStorage<T>(key: string, data: T): void {
 }
 
 // Initial IDs for new items
-let nextSubjectId = Math.max(...mockSubjects.map(s => s.id)) + 1;
-let nextLessonId = Math.max(...mockLessons.map(l => l.id)) + 1;
-let nextQuestionId = Math.max(...mockQuestions.map(q => q.id), ...onetSampleQuestions.map(q => q.id)) + 1;
-let nextQuizId = Math.max(...mockQuizzes.map(q => q.id)) + 1;
+// Initial IDs for new items (ข้อมูลจริงเริ่มจากว่าง — ไม่มีตัวอย่าง/mock)
+let nextSubjectId = 1;
+let nextLessonId = 1;
+let nextQuestionId = 1;
+let nextQuizId = 1;
 let nextAnnouncementId = 1;
 let nextCalendarEventId = 1;
 
 // ===== SUBJECTS & UNITS =====
 export function useSubjects() {
   const [subjects, setSubjects] = useState<SubjectUnit[]>(() =>
-    loadFromStorage(KEYS.subjects, mockSubjects)
+    loadFromStorage<SubjectUnit[]>(KEYS.subjects, [])
   );
 
   useEffect(() => {
@@ -79,7 +78,7 @@ export function useSubjects() {
 // ===== LESSONS =====
 export function useLessons() {
   const [lessons, setLessons] = useState<Lesson[]>(() =>
-    loadFromStorage(KEYS.lessons, mockLessons)
+    loadFromStorage<Lesson[]>(KEYS.lessons, [])
   );
 
   useEffect(() => {
@@ -114,41 +113,16 @@ export function useLessons() {
 }
 
 // ===== QUESTIONS =====
-/** Flag: mark that the sample O-NET questions have been merged into the bank once */
-const ONET_SEED_KEY = 'scitech_onet_seed_v1';
-
 /**
- * Load questions from localStorage (fallback = mock lesson questions + sample O-NET bank).
- * If a browser already has stored data WITHOUT O-NET questions, merge the sample O-NET
- * bank in once so students always have questions to practice with.
+ * โหลดคลังคำถามจาก localStorage — เริ่มว่าง (ข้อมูลจริง) ไม่มีการ seed ตัวอย่าง
+ * หมายเหตุ: ถ้าเครื่องเก่ามีข้อมูล mock ติดค้าง จะถูกล้างครั้งเดียวโดย MIGRATE_EMPTY_BINS
  */
 function loadQuestions(): Question[] {
-  const fullFallback: Question[] = [...mockQuestions, ...onetSampleQuestions];
-  const stored = loadFromStorage<Question[]>(KEYS.questions, fullFallback);
-  const base = Array.isArray(stored) ? stored : fullFallback;
-  let result = base;
-  let maxId = base.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0);
-
-  try {
-    if (!localStorage.getItem(ONET_SEED_KEY)) {
-      // First visit with this build — make sure the sample O-NET bank exists (no duplicates by text)
-      const existingOnetTexts = new Set(
-        base.filter(q => (q as any).category === 'onet').map(q => q.question_text)
-      );
-      const toAdd = onetSampleQuestions.filter(q => !existingOnetTexts.has(q.question_text));
-      if (toAdd.length > 0) {
-        const added = toAdd.map((q, i) => ({ ...q, id: maxId + i + 1 }));
-        result = [...base, ...added];
-        maxId += toAdd.length;
-      }
-    }
-  } catch (e) {
-    console.error('Failed to seed O-NET questions:', e);
-  } finally {
-    nextQuestionId = maxId + 1;
-    try { localStorage.setItem(ONET_SEED_KEY, '1'); } catch { /* ignore */ }
-  }
-  return result;
+  const stored = loadFromStorage<Question[]>(KEYS.questions, []);
+  const base = Array.isArray(stored) ? stored : [];
+  const maxId = base.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0);
+  nextQuestionId = maxId + 1;
+  return base;
 }
 
 export function useQuestions() {
@@ -194,7 +168,7 @@ export function useQuestions() {
 // ===== QUIZZES =====
 export function useQuizzes() {
   const [quizzes, setQuizzes] = useState<Quiz[]>(() =>
-    loadFromStorage(KEYS.quizzes, mockQuizzes)
+    loadFromStorage<Quiz[]>(KEYS.quizzes, [])
   );
 
   useEffect(() => {
@@ -855,7 +829,6 @@ export function generateDailyMissions(
 
 // ===== LESSON SESSION STATUS =====
 const KEYS_LESSON_SESSIONS = 'scitech_lesson_sessions';
-const LESSON_SESSION_SEED_KEY = 'scitech_lesson_session_seed_v1';
 
 export function useLessonSession() {
   const [sessions, setSessions] = useState<LessonSession[]>(() => {
@@ -865,34 +838,7 @@ export function useLessonSession() {
     } catch { return []; }
   });
 
-  // Seed sample completed sessions for demo student (id: 10) on first visit
-  useEffect(() => {
-    if (sessions.length > 0 || localStorage.getItem(LESSON_SESSION_SEED_KEY)) return;
-    // Mark first 2 published lessons as completed for student 10
-    const published = mockLessons.filter(l => l.is_published).slice(0, 2);
-    const seedSessions: LessonSession[] = published.map((l, i) => ({
-      lesson_id: l.id,
-      student_id: 10,
-      status: 'completed' as const,
-      started_at: '2026-09-01T08:00:00',
-      completed_at: `2026-09-01T08:${15 + i * 10}:00`,
-      elapsed_seconds: (i + 1) * 600,
-    }));
-    // Also start 1 in-progress lesson
-    const inProgressLesson = mockLessons.find(l => l.is_published && !published.includes(l));
-    if (inProgressLesson) {
-      seedSessions.push({
-        lesson_id: inProgressLesson.id,
-        student_id: 10,
-        status: 'in_progress' as const,
-        started_at: '2026-09-05T09:00:00',
-        elapsed_seconds: 360,
-      });
-    }
-    setSessions(seedSessions);
-    try { localStorage.setItem(KEYS_LESSON_SESSIONS, JSON.stringify(seedSessions)); } catch { /* ignore */ }
-    try { localStorage.setItem(LESSON_SESSION_SEED_KEY, '1'); } catch { /* ignore */ }
-  }, []);
+  // ไม่ seed ข้อมูลตัวอย่าง — เซสชันเริ่มว่าง (ใช้งานจริง)
 
   useEffect(() => {
     localStorage.setItem(KEYS_LESSON_SESSIONS, JSON.stringify(sessions));
@@ -966,42 +912,23 @@ export interface AppUser {
   created_at: string;
 }
 
-const mockUsers: AppUser[] = [
-  { id: 1, username: 'admin', password: 'admin123', full_name: 'ครูวิภาวดี ใจดี', role: 'admin', is_active: true, created_at: '2026-05-01' },
-  { id: 2, username: 'teacher1', password: '1234', full_name: 'ครูสมชาย รักการสอน', role: 'teacher', is_active: true, created_at: '2026-05-01' },
-  { id: 10, username: 'num01', password: '1234', full_name: 'ด.ช. ภูมิภัทร รักเรียน', role: 'student', grade_level: 3, class_name: '3/1', is_active: true, created_at: '2026-06-01' },
-  { id: 11, username: 'num02', password: '1234', full_name: 'ด.ญ. ปุณญ่า สดใส', role: 'student', grade_level: 1, class_name: '1/2', is_active: true, created_at: '2026-06-01' },
-  { id: 12, username: 'num03', password: '1234', full_name: 'ด.ช. นพณัฐ น้ำใจ', role: 'student', grade_level: 2, class_name: '2/1', is_active: true, created_at: '2026-06-01' },
-  { id: 21, username: 'num04', password: '1234', full_name: 'ด.ช. อาทิตย์ ฉายแสง', role: 'student', grade_level: 1, class_name: '1/1', is_active: true, created_at: '2026-06-01' },
-  { id: 22, username: 'num05', password: '1234', full_name: 'ด.ญ. จันทร์เจ้า สว่าง', role: 'student', grade_level: 1, class_name: '1/1', is_active: true, created_at: '2026-06-01' },
-  { id: 23, username: 'num06', password: '1234', full_name: 'ด.ช. วิชญ์ พัฒนา', role: 'student', grade_level: 1, class_name: '1/3', is_active: true, created_at: '2026-06-01' },
-  { id: 24, username: 'num07', password: '1234', full_name: 'ด.ญ. ดารารัตน์ บุญมี', role: 'student', grade_level: 2, class_name: '2/2', is_active: true, created_at: '2026-06-01' },
-  { id: 25, username: 'num08', password: '1234', full_name: 'ด.ช. พลวัฒน์ ทองดี', role: 'student', grade_level: 2, class_name: '2/1', is_active: true, created_at: '2026-06-01' },
-  { id: 26, username: 'num09', password: '1234', full_name: 'ด.ญ. ศรันย์ สดใส', role: 'student', grade_level: 3, class_name: '3/2', is_active: true, created_at: '2026-06-01' },
-  { id: 27, username: 'num10', password: '1234', full_name: 'ด.ช. กฤษณะ พัฒนา', role: 'student', grade_level: 3, class_name: '3/1', is_active: true, created_at: '2026-06-01' },
-  { id: 28, username: 'num11', password: '1234', full_name: 'ด.ญ. ชนิดา สุขใจ', role: 'student', grade_level: 3, class_name: '3/3', is_active: true, created_at: '2026-06-01' },
-  { id: 29, username: 'num12', password: '1234', full_name: 'ด.ช. นเรศ ชาญชัย', role: 'student', grade_level: 4, class_name: '4/1', is_active: true, created_at: '2026-06-01' },
-  { id: 30, username: 'num13', password: '1234', full_name: 'ด.ญ. บุษบา มาลัย', role: 'student', grade_level: 4, class_name: '4/2', is_active: true, created_at: '2026-06-01' },
-  { id: 31, username: 'num14', password: '1234', full_name: 'ด.ช. ปวเรศ รุ่งเรือง', role: 'student', grade_level: 4, class_name: '4/1', is_active: true, created_at: '2026-06-01' },
-  { id: 32, username: 'num15', password: '1234', full_name: 'ด.ช. ภัทร วงศ์ประเสริฐ', role: 'student', grade_level: 5, class_name: '5/1', is_active: true, created_at: '2026-06-01' },
-  { id: 33, username: 'num16', password: '1234', full_name: 'ด.ญ. มณี สดใส', role: 'student', grade_level: 5, class_name: '5/2', is_active: true, created_at: '2026-06-01' },
-  { id: 34, username: 'num17', password: '1234', full_name: 'ด.ช. ยุคล ชนะใจ', role: 'student', grade_level: 5, class_name: '5/1', is_active: true, created_at: '2026-06-01' },
-  { id: 35, username: 'num18', password: '1234', full_name: 'ด.ช. รัฐภูมิ ศรีสุวรรณ', role: 'student', grade_level: 6, class_name: '6/1', is_active: true, created_at: '2026-06-01' },
-  { id: 36, username: 'num19', password: '1234', full_name: 'ด.ญ. วรรณพร เจริญสุข', role: 'student', grade_level: 6, class_name: '6/2', is_active: true, created_at: '2026-06-01' },
-  { id: 37, username: 'num20', password: '1234', full_name: 'ด.ช. อรรถพล นนท์', role: 'student', grade_level: 6, class_name: '6/1', is_active: true, created_at: '2026-06-01' },
-  { id: 38, username: 'pan01', password: '1234', full_name: 'ด.ญ. ปัญญ่า สดใส', role: 'student', grade_level: 1, class_name: '1/1', is_active: true, created_at: '2026-09-04' },
+/**
+ * บัญชีผู้ดูแลระบบเริ่มต้น (บัญชีเดียว — ใช้งานจริง)
+ * ผู้ใช้อื่นทั้งหมดสร้างผ่านหน้า จัดการผู้ใช้ หรือนำเข้า CSV เท่านั้น
+ */
+const seedUsers: AppUser[] = [
+  { id: 1, username: 'admin', password: 'Dew0842239351', full_name: 'ผู้ดูแลระบบ', role: 'admin', is_active: true, created_at: '2026-09-11' },
 ];
 
 const KEYS_USERS = 'scitech_users';
-let nextUserId = Math.max(...mockUsers.map(u => u.id)) + 1;
+let nextUserId = Math.max(...seedUsers.map(u => u.id)) + 1;
 
 export function useUsers() {
   const [users, setUsers] = useState<AppUser[]>(() => {
-    const stored = loadFromStorage(KEYS_USERS, mockUsers);
-    // Merge: ensure all mock users exist (handles new mock users added after localStorage was set)
-    const storedIds = new Set(stored.map(u => u.id));
-    const newMockUsers = mockUsers.filter(u => !storedIds.has(u.id));
-    return newMockUsers.length > 0 ? [...stored, ...newMockUsers] : stored;
+    const stored = loadFromStorage<AppUser[]>(KEYS_USERS, seedUsers);
+    if (!Array.isArray(stored) || stored.length === 0) return seedUsers;
+    // ไม่ merge mock users อีกต่อไป — ข้อมูลจริงเท่านั้น
+    return stored;
   });
 
   useEffect(() => {
