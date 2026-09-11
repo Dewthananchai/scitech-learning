@@ -15,3 +15,8 @@ dist/
 
 # Logs
 *.log
+
+# Environment secrets (VITE_* ที่ไม่มีคำว่า EXAMPLE เท่านั้น)
+.env
+.env.local
+.env.*.local
