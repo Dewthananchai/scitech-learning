@@ -85,14 +85,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // ดึงข้อมูลล่าสุดจากคลาวด์ก่อนแสดงหน้าล็อกอิน (กันข้อมูลเก่าค้างในเครื่อง)
-    // แล้วค่อยเคลียร์ session เก่า (ถ้ามี)
+    // ดึงข้อมูลล่าสุดจากคลาวด์ก่อนแสดงหน้าแรก (กันข้อมูลเก่าค้างในเครื่อง)
+    // session เก่าในเครื่อง: ถ้าล็อกอินแบบทะเบียน (legacy) ให้คงสถานะไว้ —
+    // เคลียร์เฉพาะเมื่อเคยล็อกอินแบบ Supabase แต่ session หมดอายุ
     (async () => {
       try { await hydrateFromCloud(); } catch { /* ออฟไลน์ — ใช้ของเดิม */ }
+      const stored = loadUser();
       const live = await hasLiveSession();
-      if (!live) {
-        setUser(null);
-        saveUser(null);
+      if (!live && stored) {
+        // ไม่มี GoTrue session — ตรวจว่าผู้ใช้ยังอยู่ในทะเบียนไหม
+        // (legacy login ที่ยังใช้ได้ → คงไว้, ไม่งั้นออกจากระบบ)
+        try {
+          const raw = localStorage.getItem(USERS_KEY);
+          const users = raw ? JSON.parse(raw) : [];
+          const stillExists = users.some((u: Record<string, unknown>) =>
+            String(u.username).toLowerCase() === stored.username.toLowerCase());
+          if (!stillExists) {
+            setUser(null);
+            saveUser(null);
+          }
+        } catch {
+          setUser(null);
+          saveUser(null);
+        }
       }
       setIsLoading(false);
     })();
