@@ -188,35 +188,12 @@ export function useQuizzes() {
 }
 
 // ===== ANNOUNCEMENTS =====
-const mockAnnouncements: Announcement[] = [
-  {
-    id: 1,
-    title: 'เปิดเทอมใหม่ ปีการศึกษา 2569',
-    content: 'ยินดีต้อนรับนักเรียนทุกคนสู่ปีการศึกษาใหม่ มีบทเรียนและแบบทดสอบใหม่ๆ มากมาย',
-    type: 'info',
-    target_audience: 'all',
-    is_active: true,
-    created_by: 'ครูวิภาวดี',
-    created_at: '2569-05-15',
-  },
-  {
-    id: 2,
-    title: 'แบบทดสอบวิทยาศาสตร์ ป.1',
-    content: 'มีแบบทดสอบใหม่ในหน่วยสิ่งมีชีวิต สำหรับนักเรียนชั้น ป.1',
-    type: 'assignment',
-    target_audience: 'students',
-    grade_levels: [1],
-    is_active: true,
-    created_by: 'ครูสมชาย',
-    created_at: '2569-06-01',
-  },
-];
 
 const KEYS_ANNOUNCEMENTS = 'scitech_announcements';
 
 export function useAnnouncements() {
   const [announcements, setAnnouncements] = useState<Announcement[]>(() =>
-    loadFromStorage(KEYS_ANNOUNCEMENTS, mockAnnouncements)
+    loadFromStorage(KEYS_ANNOUNCEMENTS, [])
   );
 
   useEffect(() => {
@@ -405,38 +382,12 @@ export function useWorksheetSubmissions() {
 }
 
 // ===== CALENDAR EVENTS =====
-const mockCalendarEvents: CalendarEvent[] = [
-  {
-    id: 1,
-    title: 'เปิดเทอม',
-    date: '2026-05-15',
-    type: 'event',
-    color: '#10b981',
-    is_recurring: true,
-  },
-  {
-    id: 2,
-    title: 'สอบกลางภาค',
-    date: '2026-07-15',
-    end_date: '2026-07-19',
-    type: 'exam',
-    color: '#ef4444',
-    grade_levels: [1, 2, 3, 4, 5, 6],
-  },
-  {
-    id: 3,
-    title: 'วันวิทยาศาสตร์',
-    date: '2026-08-18',
-    type: 'event',
-    color: '#8b5cf6',
-  },
-];
 
 const KEYS_CALENDAR = 'scitech_calendar';
 
 export function useCalendarEvents() {
   const [events, setEvents] = useState<CalendarEvent[]>(() =>
-    loadFromStorage(KEYS_CALENDAR, mockCalendarEvents)
+    loadFromStorage(KEYS_CALENDAR, [])
   );
 
   useEffect(() => {
@@ -467,32 +418,7 @@ export function useCalendarEvents() {
 }
 
 // ===== ATTENDANCE =====
-const mockSessions: AttendanceSession[] = [
-  {
-    id: 1,
-    title: 'เช็คชื่อวิทยาศาสตร์ ป.3',
-    date: '2026-09-02',
-    time: '08:30',
-    grade_level: 3,
-    status: 'open',
-    created_by: 'ครูวิภาวดี',
-    created_at: '2026-09-02',
-  },
-  {
-    id: 2,
-    title: 'เช็คชื่อวิทยาศาสตร์ ป.1',
-    date: '2026-09-01',
-    time: '09:00',
-    grade_level: 1,
-    status: 'closed',
-    created_by: 'ครูวิภาวดี',
-    created_at: '2026-09-01',
-  },
-];
 
-const mockRecords: AttendanceRecord[] = [
-  { id: 1, session_id: 2, student_id: 11, student_name: 'ด.ญ. ปุณญ่า สดใส', grade_level: 1, status: 'present', checked_in_at: '2026-09-01T09:05:00' },
-];
 
 const KEYS_ATTENDANCE_SESSIONS = 'scitech_attendance_sessions';
 const KEYS_ATTENDANCE_RECORDS = 'scitech_attendance_records';
@@ -501,10 +427,10 @@ let nextRecordId = 2;
 
 export function useAttendance() {
   const [sessions, setSessions] = useState<AttendanceSession[]>(() =>
-    loadFromStorage(KEYS_ATTENDANCE_SESSIONS, mockSessions)
+    loadFromStorage(KEYS_ATTENDANCE_SESSIONS, [])
   );
   const [records, setRecords] = useState<AttendanceRecord[]>(() =>
-    loadFromStorage(KEYS_ATTENDANCE_RECORDS, mockRecords)
+    loadFromStorage(KEYS_ATTENDANCE_RECORDS, [])
   );
 
   useEffect(() => {
@@ -569,38 +495,7 @@ export function useAttendance() {
 // ===== DAILY MISSIONS =====
 const todayStr = () => new Date().toISOString().split('T')[0];
 
-const mockMissions: Mission[] = [
-  {
-    id: 1,
-    title: 'แบบทดสอบสิ่งมีชีวิต',
-    description: 'ตอบคำถามเรื่องสิ่งมีชีวิตให้ถูก 3 ข้อ รับ 10 ดาว',
-    lesson_id: 1,
-    subject_unit_id: 1,
-    grade_level: 1,
-    stars_reward: 10,
-    question_count: 3,
-    is_active: true,
-    is_daily_random: false,
-    created_by: 'ครูวิภาวดี',
-    created_at: '2026-09-01',
-  },
-  {
-    id: 2,
-    title: 'ภารกิจวิทยาศาสตร์ ป.3',
-    description: 'ทดสอบความรู้วิทยาศาสตร์ 回答 5 ข้อ รับ 15 ดาว',
-    grade_level: 3,
-    stars_reward: 15,
-    question_count: 5,
-    is_active: true,
-    is_daily_random: true,
-    created_by: 'ครูวิภาวดี',
-    created_at: '2026-09-01',
-  },
-];
 
-const mockCompletions: MissionCompletion[] = [
-  { id: 1, mission_id: 1, student_id: 11, student_name: 'ด.ญ. ปุณญ่า สดใส', score: 100, total_correct: 3, total_questions: 3, stars_earned: 10, completed_at: '2026-09-01T10:30:00' },
-];
 
 const KEYS_MISSIONS = 'scitech_missions';
 const KEYS_MISSION_COMPLETIONS = 'scitech_mission_completions';
@@ -609,10 +504,10 @@ let nextCompletionId = 2;
 
 export function useMissions() {
   const [missions, setMissions] = useState<Mission[]>(() =>
-    loadFromStorage(KEYS_MISSIONS, mockMissions)
+    loadFromStorage(KEYS_MISSIONS, [])
   );
   const [completions, setCompletions] = useState<MissionCompletion[]>(() =>
-    loadFromStorage(KEYS_MISSION_COMPLETIONS, mockCompletions)
+    loadFromStorage(KEYS_MISSION_COMPLETIONS, [])
   );
 
   useEffect(() => {

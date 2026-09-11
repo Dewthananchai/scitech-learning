@@ -840,8 +840,8 @@ export default function AdminUsers() {
                 <p className="text-xs text-slate-500 mb-1">คอลัมน์ที่รองรับ: <span className="font-mono bg-white px-1 rounded">name, username, password, grade, class</span></p>
                 <div className="bg-white rounded-lg p-3 mt-2 font-mono text-xs text-slate-600 border border-slate-200">
                   <p className="text-slate-400">name,username,password,grade,class</p>
-                  <p>ด.ช. สมชาย ใจดี,somchai,1234,3,3/1</p>
-                  <p>ด.ญ. สมหญิง สดใส,somying,1234,3,3/2</p>
+                  <p className="text-slate-400">ชื่อ-สกุล,username,รหัสผ่าน,ชั้น,ห้อง</p>
+                  <p className="text-slate-400">เช่น ด.ช. กรใจ ตั้งใจเรียน,krachai,ab12cd,3,3/1</p>
                 </div>
                 <a href={asset('example_students.csv')} download className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2">⬇️ ดาวน์โหลดตัวอย่าง CSV</a>
               </div>

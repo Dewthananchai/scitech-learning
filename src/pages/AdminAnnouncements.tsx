@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAnnouncements } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
+import { useAuth } from '../store/AuthContext';
 import MobileHeader from '../components/MobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
@@ -22,6 +23,7 @@ const audienceOptions = [
 export default function AdminAnnouncements() {
   const { announcements, addAnnouncement, updateAnnouncement, deleteAnnouncement } = useAnnouncements();
   const { grades } = useAppStore();
+  const { user } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState({
@@ -44,7 +46,7 @@ export default function AdminAnnouncements() {
     if (editId) {
       updateAnnouncement(editId, form);
     } else {
-      addAnnouncement({ ...form, created_by: 'ครูวิภาวดี' });
+      addAnnouncement({ ...form, created_by: user?.full_name || 'ผู้ดูแลระบบ' });
     }
     resetForm();
   };
