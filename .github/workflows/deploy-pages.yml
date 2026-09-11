@@ -35,6 +35,9 @@ jobs:
         env:
           # Makes vite.config.ts use base '/scitech-learning/'
           VITE_PAGES_BASE: '1'
+          # Supabase cloud sync (publishable key — safe for client bundles)
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       # SPA fallback: GitHub Pages serves 404.html for unknown deep links
       - name: Add SPA redirect shim
