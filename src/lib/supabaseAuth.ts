@@ -59,7 +59,9 @@ export async function signInWithUsername(
   }
 
   // 3) สร้างบัญชี auth อัตโนมัติ (รหัสผ่านถูก bcrypt ฝั่ง GoTrue)
-  const { error: upErr } = await supabase.auth.signUp({
+  //    ถ้าสร้างไม่สำเร็จ (เช่น email rate limit เพราะโปรเจกต์ยังเปิด
+  //    "Confirm email") → ไม่ทำให้ล็อกอินพัง: ยังใช้ทะเบียนเดิมต่อได้
+  const { data: upData, error: upErr } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -73,19 +75,33 @@ export async function signInWithUsername(
       },
     },
   });
-  // อีเมลยืนยันอัตโนมัติถูกปิดอยู่แล้วในโปรเจกต์นี้; ถ้าโปรเจกต์เปิด
-  // ผู้ใช้จะได้ session null → ต้องเปิด "Confirm email" ปิดใน dashboard
   if (upErr && !/already registered|already exists/i.test(upErr.message)) {
-    return { error: `สร้างบัญชีระบบ cloud ไม่สำเร็จ: ${upErr.message}` };
+    console.warn(`[auth] สร้างบัญชี GoTrue ยังไม่สำเร็จ (${upErr.message}) — ล็อกอินแบบทะเบียนเดิม`);
   }
 
-  // 4) ล็อกอินซ้ำด้วยบัญชีที่เพิ่งสร้าง
-  const retry = await supabase.auth.signInWithPassword({ email, password });
-  if (retry.error || !retry.data.user) {
-    return { error: retry.error?.message ?? 'ล็อกอินไม่สำเร็จหลังสร้างบัญชี' };
+  // 4) ถ้าสมัครสำเร็จ (ได้ session กลับมาเลย) → ใช้ session นั้นทันที
+  if (!upErr && upData?.session) {
+    return { via: 'supabase', user: await toAuthUser(supabase, upData.user?.user_metadata ?? {}, username) };
   }
-  const meta = (retry.data.user.user_metadata ?? {}) as Record<string, unknown>;
-  return { via: 'supabase', user: await toAuthUser(supabase, meta, username) };
+
+  // 5) ไม่งั้นล็อกอินซ้ำ (เช่นบัญชีมีอยู่แล้ว); ถ้ายังไม่สำเร็จ →
+  //    ย้อนไปใช้ทะเบียนเดิมที่ตรวจรหัสผ่านแล้ว (ไม่บล็อกการใช้งาน)
+  const retry = await supabase.auth.signInWithPassword({ email, password });
+  if (!retry.error && retry.data.user) {
+    const meta = (retry.data.user.user_metadata ?? {}) as Record<string, unknown>;
+    return { via: 'supabase', user: await toAuthUser(supabase, meta, username) };
+  }
+  return {
+    via: 'legacy',
+    user: {
+      id: register.id,
+      username: register.username,
+      full_name: register.full_name ?? register.username,
+      role: register.role === 'teacher' || register.role === 'admin' ? 'admin' : 'student',
+      grade_level: register.grade_level ?? undefined,
+      classroom: register.class_name ?? undefined,
+    },
+  };
 }
 
 /** สิทธิ์จริงมาจากตาราง app_admins ฝั่งเซิร์ฟเวอร์ (is_admin) — ไม่เชื่อ metadata ใน JWT */
