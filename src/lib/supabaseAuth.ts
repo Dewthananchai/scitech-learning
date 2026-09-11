@@ -28,6 +28,7 @@ export interface RegisterUser {
 
 export const authEmail = (username: string) =>
   `${username.toLowerCase().trim()}@scitech.local`;
+const AUTH_DOMAIN = 'scitech.local';
 
 /** ผลล็อกอินแบบรวม: Supabase Auth ก่อน, ทะเบียนเดิมเป็นทางถอยหลัง */
 export async function signInWithUsername(
@@ -197,12 +198,29 @@ export async function backfillAuthUsersIfNeeded(): Promise<void> {
     const users = JSON.parse(raw) as RegisterUser[];
     if (!Array.isArray(users) || users.length === 0) return;
 
+    /* กติกาความปลอดภัย: ห้ามลบรหัสผ่านออกจากทะเบียนถ้ายังไม่พิสูจน์ได้
+       ว่าบัญชี GoTrue ใช้งานได้จริง — ไม่งั้นผู้ใช้จะล็อกอินไม่ได้ทั้งระบบ
+       (บั๊กครั้งแรก: strip ก่อนรู้ว่า signUp สำเร็จ → รหัสผ่านหายทั้งระบบ) */
+
+    // ตรวจก่อนว่าโปรเจกต์อนุญาตให้ signUp ได้จริง (Confirm email OFF)
+    const probeEmail = `backfill-probe-${Date.now()}@${AUTH_DOMAIN}`;
+    const probePw = `Pr-${Math.random().toString(36).slice(2, 12)}1A`;
+    const probe = await supabase.auth.signUp({ email: probeEmail, password: probePw });
+    const confirmEmailOn = !probe.data.session;
+    // ลบ probe ไม่ได้จาก client (ไม่มี admin API) — ปล่อยไว้เป็นบัญชีค้างใช้
+    if (confirmEmailOn) {
+      console.warn(
+        '[authBackfill] งดทำงาน: โปรเจกต์เปิด "Confirm email" อยู่ — ' +
+        'ปิดที่ Supabase Dashboard → Authentication → Sign In / Providers ก่อน'
+      );
+      return; // ไม่แตะทะเบียนเลย — รหัสผ่านยังอยู่ครบ ล็อกอินได้ตามปกติ
+    }
+
     let created = 0;
+    let failed = 0;
     for (const u of users) {
       if (!u.username) continue;
       const email = authEmail(u.username);
-      // เดาว่ามีบัญชีอยู่แล้วไหม: ลอง recover-password แบบสั้น ๆ ไม่ได้ —
-      // ใช้วิธีตรง ๆ: ลอง signUp ถ้า "already registered" = มีอยู่แล้ว
       const pw = u.password ?? Math.random().toString(36).slice(2, 10) + 'Aa1';
       const { error } = await supabase.auth.signUp({
         email,
@@ -218,20 +236,28 @@ export async function backfillAuthUsersIfNeeded(): Promise<void> {
           },
         },
       });
-      if (!error) created++;
-      else if (!/already registered|already exists/i.test(error.message)) {
+      if (!error) {
+        created++;
+      } else if (!/already registered|already exists/i.test(error.message)) {
+        // สร้างไม่สำเร็จ — เก็บรหัสผ่านไว้ในทะเบียนต่อ (ยังล็อกอินแบบเดิมได้)
+        failed++;
         console.warn(`[authBackfill] ${u.username}: ${error.message}`);
       }
     }
 
-    // เคลียร์รหัสผ่านในทะเบียน — จากนี้รหัสผ่านอยู่ใน GoTrue เท่านั้น
+    if (failed > 0) {
+      console.warn(`[authBackfill] ข้ามการ strip: สร้างไม่สำเร็จ ${failed} บัญชี — รหัสผ่านคงอยู่ในทะเบียนต่อ`);
+      return; // ลองใหม่ครั้งหน้า (ธงยังไม่ตั้ง)
+    }
+
+    // สำเร็จทุกบัญชีเท่านั้น — ค่อยลบรหัสผ่านออกจากทะเบียน
     const stripped = users.map(u => {
       const { password: _pw, ...rest } = u;
       return rest;
     });
     localStorage.setItem('scitech_users', JSON.stringify(stripped));
     localStorage.setItem(BACKFILL_FLAG, new Date().toISOString());
-    console.info(`[authBackfill] สร้างบัญชี auth ใหม่ ${created} บัญชี — รหัสผ่านถูกย้ายเข้าระบบ auth แล้ว`);
+    console.info(`[authBackfill] ย้ายรหัสผ่านเข้า GoTrue สำเร็จ ${created} บัญชี`);
   } catch (e) {
     console.warn('[authBackfill] ข้าม (ลองใหม่ครั้งหน้า):', e);
   }
