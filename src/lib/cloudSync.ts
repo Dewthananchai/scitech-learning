@@ -24,8 +24,9 @@ const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 /** ทุกคีย์ localStorage ของแอปที่ต้องการซิงก์ (ไม่รวม session/local UI state) */
 export const SYNCED_KEYS: string[] = [
+  // ทะเบียนผู้ใช้: ยัง sync เพื่อให้ทุกเครื่องเห็นรายชื่อเดียวกัน
+  // (แต่ RLS อนุญาตให้ admin เขียนเท่านั้น; รหัสผ่านถูกถอดออกโดย backfill)
   'scitech_users',
-  'scitech_user_passwords',
   'scitech_lessons',
   'scitech_questions',
   'scitech_quizzes',

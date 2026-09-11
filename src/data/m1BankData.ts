@@ -40,11 +40,6 @@ export interface M1BankQuestion {
 
 export const DEFAULT_SCHOOLS = [
   GENERAL,
-  'สวนกุหลาบวิทยาลัย',
-  'เตรียมอุดมศึกษาพัฒนาการ',
-  'สาธิตจุฬาลงกรณ์มหาวิทยาลัย',
-  'มหิดลวิทยานุสรณ์',
-  'บดินทรเดชา (สิงห์ สิงหเสนี)',
 ];
 
 export const DEFAULT_YEARS = [GENERAL, '2566', '2567', '2568'];

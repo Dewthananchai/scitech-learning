@@ -12,14 +12,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!username || !password) {
       setError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน');
       return;
     }
-    const result = login(username, password);
+    setSubmitting(true);
+    const result = await login(username, password);
+    setSubmitting(false);
     if (result.success) {
       // Navigate based on actual role from login result
       const stored = localStorage.getItem('scitech_auth_user');
@@ -163,13 +167,14 @@ export default function LoginPage() {
                 {/* Submit */}
                 <button
                   type="submit"
-                  className={`w-full py-3 rounded-xl font-bold text-white text-sm transition-all duration-200 shadow-lg hover:shadow-xl ${
+                  disabled={submitting}
+                  className={`w-full py-3 rounded-xl font-bold text-white text-sm transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-60 ${
                     selectedRole === 'admin'
                       ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
                       : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600'
                   }`}
                 >
-                  เข้าสู่ระบบ
+                  {submitting ? 'กำลังตรวจสอบ…' : 'เข้าสู่ระบบ'}
                 </button>
               </form>
 

@@ -210,8 +210,7 @@ export function M1BankContent() {
   const downloadSampleCSV = useCallback(() => {
     const sample = [
       ['school', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain'],
-      [GENERAL, GENERAL, '1', 'science', 'น้ำเดือดที่กี่องศาเซลเซียส?', '50', '100', '150', '200', 'B', 'น้ำเดือดที่ 100 องศา ที่ความดันปกติ'],
-      [GENERAL, GENERAL, '1', 'math', '3 คูณ 4 เท่ากับเท่าใด?', '7', '12', '10', '9', 'B', '3x4=12'],
+      [GENERAL, GENERAL, '1', 'science', 'ใส่คำถามข้อที่ 1 ที่นี่', 'ตัวเลือก 1', 'ตัวเลือก 2', 'ตัวเลือก 3', 'ตัวเลือก 4', 'B', 'คำอธิบายเฉลย'],
     ]
       .map((row) => row.map((cell) => `"${cell}"`).join(','))
       .join('\n');

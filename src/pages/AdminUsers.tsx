@@ -9,6 +9,7 @@ import { useAuth } from '../store/AuthContext';
 import MobileHeader from '../components/MobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
 import { asset } from '../lib/asset';
+import { adminCreateAuthUser, setAuthPassword } from '../lib/supabaseAuth';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const GRADES = [1, 2, 3, 4, 5, 6];
@@ -111,12 +112,28 @@ export default function AdminUsers() {
     setShowUserForm(false);
   };
 
-  const handleUserSubmit = () => {
+  const handleUserSubmit = async () => {
     if (!userForm.username || !userForm.full_name) return;
     if (editUser) {
       updateUser(editUser.id, userForm);
+      // รหัสผ่านแก้ผ่านระบบ auth ของ Supabase (bcrypt ฝั่งเซิร์ฟเวอร์)
+      if (userForm.password) {
+        const res = await setAuthPassword(userForm.username, userForm.password);
+        if (!res.ok) alert(`⚠️ บันทึกในทะเบียนแล้ว แต่เปลี่ยนรหัสผ่านในระบบ cloud ไม่สำเร็จ: ${res.error}`);
+      }
     } else {
       addUser(userForm);
+      // สร้างบัญชีล็อกอินในระบบ cloud ด้วย (รหัสผ่านถูกเก็บเป็น bcrypt)
+      const res = await adminCreateAuthUser({
+        id: 0,
+        username: userForm.username,
+        password: userForm.password,
+        full_name: userForm.full_name,
+        role: userForm.role,
+        is_active: userForm.is_active,
+        class_name: userForm.class_name,
+      });
+      if (!res.ok) alert(`⚠️ เพิ่มในทะเบียนแล้ว แต่สร้างบัญชี cloud ไม่สำเร็จ: ${res.error}\n(ผู้ใช้จะถูกสร้างอัตโนมัติเมื่อล็อกอินครั้งแรก)`);
     }
     resetUserForm();
   };
@@ -144,7 +161,7 @@ export default function AdminUsers() {
         const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
         const fullName = nameIdx >= 0 ? cols[nameIdx] : cols[0];
         const username = usernameIdx >= 0 ? cols[usernameIdx] : `student${Date.now()}${i}`;
-        const password = passwordIdx >= 0 ? cols[passwordIdx] : '1234';
+        const password = passwordIdx >= 0 ? cols[passwordIdx] : 'scitech123';
         const gradeLevel = gradeIdx >= 0 ? parseInt(cols[gradeIdx]) || 1 : 1;
         const className = classIdx >= 0 ? cols[classIdx] : `${gradeLevel}/1`;
         if (!fullName) continue;
@@ -178,7 +195,7 @@ export default function AdminUsers() {
 
   const handleEditUser = (u: AppUser) => {
     setUserForm({
-      username: u.username, password: u.password, full_name: u.full_name, role: u.role,
+      username: u.username, password: '', full_name: u.full_name, role: u.role,
       grade_level: u.grade_level || 1, class_name: u.class_name || '', school_name: u.school_name || '', is_active: u.is_active,
     });
     setEditUser(u);
@@ -771,7 +788,7 @@ export default function AdminUsers() {
               </div>
               <div className="flex gap-3 mt-6">
                 <button onClick={resetUserForm} className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
-                <button onClick={handleUserSubmit} className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
+                <button onClick={() => void handleUserSubmit()} className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
                   {editUser ? 'บันทึก' : 'เพิ่มผู้ใช้'}
                 </button>
               </div>
@@ -866,7 +883,7 @@ export default function AdminUsers() {
                           <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
                           <td className="py-2 px-3 font-medium">{u.full_name}</td>
                           <td className="py-2 px-3 text-slate-500 font-mono text-xs">{u.username}</td>
-                          <td className="py-2 px-3 text-center text-slate-500 font-mono text-xs">{u.password}</td>
+                          <td className="py-2 px-3 text-center text-slate-400 font-mono text-xs">••••••</td>
                           <td className="py-2 px-3 text-center">ป.{u.grade_level}</td>
                           <td className="py-2 px-3 text-center text-slate-500">{u.class_name}</td>
                         </tr>

@@ -107,20 +107,24 @@ export default function ProfilePage() {
     setMessage({ type: 'success', text: '✅ บันทึกชื่อสำเร็จ!' });
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       setMessage({ type: 'error', text: 'กรุณากรอกข้อมูลให้ครบทุกช่อง' });
       return;
     }
-    if (newPassword.length < 4) {
-      setMessage({ type: 'error', text: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร' });
+    if (newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' });
       return;
     }
     if (newPassword !== confirmPassword) {
       setMessage({ type: 'error', text: 'รหัสผ่านใหม่ไม่ตรงกัน' });
       return;
     }
-    changePassword(newPassword);
+    const res = await changePassword(newPassword);
+    if (res && !res.success) {
+      setMessage({ type: 'error', text: res.error || 'เปลี่ยนรหัสผ่านไม่สำเร็จ' });
+      return;
+    }
     setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');

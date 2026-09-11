@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, createContext, useContext } from 'react';
+import { signInWithUsername, setAuthPassword, signOutSupabase, hasLiveSession } from '../lib/supabaseAuth';
+import { hydrateFromCloud } from '../lib/cloudSync';
 
 export type UserRole = 'admin' | 'student' | null;
 
@@ -16,48 +18,17 @@ export interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (username: string, password: string) => { success: boolean; error?: string };
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateProfile: (updates: Partial<AuthUser>) => void;
-  changePassword: (newPassword: string) => void;
+  changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   isAdmin: boolean;
   isStudent: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-/**
- * ระบบผู้ใช้จริง — ตรวจสอบกับทะเบียนผู้ใช้ใน localStorage (scitech_users) เท่านั้น
- * ไม่มีบัญชีทดลอง (demo) อีกต่อไป — ผู้ดูแลระบบสร้างบัญชีอื่นทั้งหมดผ่านหน้าจัดการผู้ใช้
- */
 const USERS_KEY = 'scitech_users';
-const PASSWORDS_KEY = 'scitech_user_passwords';
-
-function findStoredUser(username: string): Record<string, unknown> | null {
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    if (!raw) return null;
-    const users = JSON.parse(raw);
-    const found = users.find((u: Record<string, unknown>) =>
-      String(u.username).toLowerCase() === username.toLowerCase().trim() && u.is_active !== false
-    );
-    return found ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function getStoredPassword(username: string, fallback: unknown): string {
-  try {
-    const raw = localStorage.getItem(PASSWORDS_KEY);
-    if (!raw) return String(fallback ?? '');
-    const passwords = JSON.parse(raw);
-    return passwords[username.toLowerCase().trim()] ?? String(fallback ?? '');
-  } catch {
-    return String(fallback ?? '');
-  }
-}
-
 const STORAGE_KEY = 'scitech_auth_user';
 
 function loadUser(): AuthUser | null {
@@ -74,7 +45,6 @@ function saveUser(user: AuthUser | null) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
     } catch (e) {
       console.error('Failed to save user to localStorage:', e);
-      // If storage is full, try removing the profile_image and retry
       if (user.profile_image) {
         try {
           const withoutImage = { ...user, profile_image: undefined };
@@ -89,42 +59,74 @@ function saveUser(user: AuthUser | null) {
   }
 }
 
+/** sync ข้อมูลโปรไฟล์กลับทะเบียนผู้ใช้ (ชื่อ ชั้น ห้อง — ไม่แตะรหัสผ่าน) */
+function syncProfileToRegister(id: number, updates: Partial<AuthUser>) {
+  try {
+    const raw = localStorage.getItem(USERS_KEY);
+    if (!raw) return;
+    const users = JSON.parse(raw);
+    localStorage.setItem(USERS_KEY, JSON.stringify(users.map((u: Record<string, unknown>) =>
+      Number(u.id) === id
+        ? {
+            ...u,
+            ...(updates.full_name !== undefined ? { full_name: updates.full_name } : {}),
+            ...(updates.grade_level !== undefined ? { grade_level: updates.grade_level } : {}),
+            ...(updates.classroom !== undefined ? { class_name: updates.classroom } : {}),
+            ...(updates.school_name !== undefined ? { school_name: updates.school_name } : {}),
+            ...(updates.profile_image !== undefined ? { profile_image: updates.profile_image } : {}),
+          }
+        : u
+    )));
+  } catch {}
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadUser);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setUser(loadUser());
-    setIsLoading(false);
+    // ถ้า session ใน Supabase หมดอายุ ให้ถือว่าออกจากระบบด้วย
+    hasLiveSession().then(live => {
+      if (!live) {
+        setUser(null);
+        saveUser(null);
+      }
+      setIsLoading(false);
+    });
   }, []);
 
-  const login = useCallback((username: string, password: string) => {
-    const key = username.toLowerCase().trim();
-    const found = findStoredUser(key);
-    if (!found) {
-      return { success: false, error: 'ไม่พบผู้ใช้งานนี้ในระบบ' };
+  const login = useCallback(async (username: string, password: string) => {
+    const result = await signInWithUsername(username, password);
+    if ('error' in result) {
+      return { success: false, error: result.error };
     }
-    const actualPassword = getStoredPassword(key, found.password);
-    if (actualPassword !== password) {
-      return { success: false, error: 'รหัสผ่านไม่ถูกต้อง' };
+    // เติมข้อมูลล่าสุดจากทะเบียน (เช่น รูปโปรไฟล์ที่เปลี่ยนไป)
+    let profileImage: string | undefined;
+    try {
+      const raw = localStorage.getItem(USERS_KEY);
+      if (raw) {
+        const users = JSON.parse(raw);
+        const found = users.find((u: Record<string, unknown>) =>
+          String(u.username).toLowerCase() === result.user.username.toLowerCase()
+        );
+        if (found?.profile_image) profileImage = String(found.profile_image);
+      }
+    } catch {}
+    const finalUser = { ...result.user, profile_image: profileImage };
+    setUser(finalUser);
+    saveUser(finalUser);
+    // ดึงข้อมูลล่าสุดจากคลาวด์ทันทีที่ได้ session
+    // (แถว app_state อ่านได้เฉพาะผู้ที่ล็อกอินแล้วหลังเปิด RLS)
+    if (result.via === 'supabase') {
+      try { await hydrateFromCloud(); } catch { /* ออฟไลน์ — ใช้ localStorage เดิม */ }
     }
-    const entry: AuthUser = {
-      id: Number(found.id),
-      username: String(found.username),
-      full_name: String(found.full_name ?? found.username),
-      role: found.role === 'teacher' ? 'admin' : (found.role as 'admin' | 'student'),
-      grade_level: found.grade_level != null ? Number(found.grade_level) : undefined,
-      classroom: found.class_name != null ? String(found.class_name) : undefined,
-      school_name: found.school_name != null ? String(found.school_name) : undefined,
-    };
-    setUser(entry);
-    saveUser(entry);
     return { success: true };
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     saveUser(null);
+    void signOutSupabase();
   }, []);
 
   const updateProfile = useCallback((updates: Partial<AuthUser>) => {
@@ -132,44 +134,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
       saveUser(updated);
-      // sync กลับไปยังทะเบียนผู้ใช้ใน localStorage ด้วย
-      try {
-        const raw = localStorage.getItem(USERS_KEY);
-        if (raw) {
-          const users = JSON.parse(raw);
-          localStorage.setItem(USERS_KEY, JSON.stringify(users.map((u: Record<string, unknown>) =>
-            Number(u.id) === prev.id
-              ? { ...u, full_name: updated.full_name, grade_level: updated.grade_level, class_name: updated.classroom, school_name: updated.school_name, profile_image: updated.profile_image }
-              : u
-          )));
-        }
-      } catch {}
+      syncProfileToRegister(prev.id, updates);
       return updated;
     });
   }, []);
 
-  const changePassword = useCallback((newPassword: string) => {
-    setUser(prev => {
-      if (!prev) return prev;
-      // เขียนทับรหัสใน scitech_user_passwords (ทับ seed ของทะเบียนผู้ใช้ด้วย)
-      try {
-        const stored = localStorage.getItem(PASSWORDS_KEY);
-        const passwords: Record<string, string> = stored ? JSON.parse(stored) : {};
-        passwords[prev.username.toLowerCase()] = newPassword;
-        localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
-      } catch {}
-      try {
-        const raw = localStorage.getItem(USERS_KEY);
-        if (raw) {
-          const users = JSON.parse(raw);
-          localStorage.setItem(USERS_KEY, JSON.stringify(users.map((u: Record<string, unknown>) =>
-            Number(u.id) === prev.id ? { ...u, password: newPassword } : u
-          )));
-        }
-      } catch {}
-      return prev;
-    });
-  }, []);
+  const changePassword = useCallback(async (newPassword: string) => {
+    if (!user) return { success: false, error: 'ยังไม่ได้ล็อกอิน' };
+    // รหัสผ่านถูกเปลี่ยนในระบบ auth ของ Supabase เท่านั้น (bcrypt ฝั่งเซิร์ฟเวอร์)
+    // ห้ามเขียนรหัสผ่านกลับลงทะเบียน scitech_users — แถวนั้นทุกคนที่ล็อกอินอ่านได้
+    const res = await setAuthPassword(user.username, newPassword);
+    if (!res.ok) return { success: false, error: res.error };
+    return { success: true };
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, updateProfile, changePassword, isAdmin: user?.role === 'admin', isStudent: user?.role === 'student' }}>

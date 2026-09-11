@@ -9,6 +9,11 @@ import { initCloudSync, cloudSyncConfigured } from './lib/cloudSync'
 import { runProductionResetIfNeeded } from './lib/productionReset'
 import './index.css'
 
+// ย้ายรหัสผ่านเข้าระบบ auth ของ Supabase ครั้งเดียว (หลังแอปโหลดแล้ว ไม่บล็อกหน้า)
+void import('./lib/supabaseAuth').then(m =>
+  setTimeout(() => void m.backfillAuthUsersIfNeeded().catch(() => {}), 3000)
+)
+
 function boot() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
@@ -31,6 +36,7 @@ if (cloudSyncConfigured()) {
   Promise.race([
     runProductionResetIfNeeded().then(() => initCloudSync()),
     timeout,
-  ]).finally(boot)} else {
+  ]).finally(boot)
+} else {
   runProductionResetIfNeeded().finally(boot)
 }
