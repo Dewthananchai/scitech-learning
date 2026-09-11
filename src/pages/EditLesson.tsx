@@ -10,9 +10,8 @@ const steps = [
   { num: 1, label: 'ข้อมูลพื้นฐาน' },
   { num: 2, label: 'เป้าหมายการเรียนรู้' },
   { num: 3, label: 'เนื้อหาบทเรียน' },
-  { num: 4, label: 'กิจกรรมและใบงาน' },
-  { num: 5, label: 'แบบทดสอบ' },
-  { num: 6, label: 'การเผยแพร่' },
+  { num: 4, label: 'แบบทดสอบ' },
+  { num: 5, label: 'การเผยแพร่' },
 ];
 
 type MediaType = 'none' | 'pdf' | 'youtube' | 'google_drive';
@@ -498,19 +497,8 @@ export default function EditLesson() {
       case 4:
         return (
           <div>
-            <p className="font-semibold text-blue-700 mb-4">4. กิจกรรมและใบงาน</p>
-            <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
-              <span className="text-4xl block mb-2">📝</span>
-              <p className="text-sm text-slate-500">เพิ่มกิจกรรมและใบงานสำหรับบทเรียนนี้</p>
-              <button className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">เพิ่มกิจกรรม</button>
-            </div>
-          </div>
-        );
-      case 5:
-        return (
-          <div>
             <div className="flex items-center justify-between mb-4">
-              <p className="font-semibold text-blue-700">5. แบบทดสอบ ({existingQuestions.length + newQuestions.length} ข้อ)</p>
+              <p className="font-semibold text-blue-700">4. แบบทดสอบ ({existingQuestions.length + newQuestions.length} ข้อ)</p>
               <div className="flex gap-2">
                 <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleFileImport} className="hidden" />
                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">📁 นำเข้าจากไฟล์</button>
@@ -619,10 +607,10 @@ export default function EditLesson() {
             )}
           </div>
         );
-      case 6:
+      case 5:
         return (
           <div>
-            <p className="font-semibold text-blue-700 mb-4">6. การเผยแพร่</p>
+            <p className="font-semibold text-blue-700 mb-4">5. การเผยแพร่</p>
             <div className="space-y-4">
               <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${!form.isPublished ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                 <input type="radio" name="publish" checked={!form.isPublished} onChange={() => updateField('isPublished', false)} className="w-4 h-4 text-blue-600" />
@@ -690,7 +678,7 @@ export default function EditLesson() {
                   <span>•</span>
                   <span>ID: #{id}</span>
                   <span>•</span>
-                  <span>ขั้นตอนที่ {currentStep} จาก 6</span>
+                  <span>ขั้นตอนที่ {currentStep} จาก {steps.length}</span>
                 </div>
                 <h1 className="text-xl md:text-2xl font-black tracking-tight text-white flex items-center gap-2">
                   <span>แก้ไขบทเรียน: {lesson?.title || 'กำลังโหลด...'}</span>
@@ -785,7 +773,7 @@ export default function EditLesson() {
                 >
                   {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึกฉบับร่าง'}
                 </button>
-                {currentStep < 6 ? (
+                {currentStep < steps.length ? (
                   <button
                     type="button"
                     onClick={nextStep}
