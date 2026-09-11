@@ -85,14 +85,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // ถ้า session ใน Supabase หมดอายุ ให้ถือว่าออกจากระบบด้วย
-    hasLiveSession().then(live => {
+    // ดึงข้อมูลล่าสุดจากคลาวด์ก่อนแสดงหน้าล็อกอิน (กันข้อมูลเก่าค้างในเครื่อง)
+    // แล้วค่อยเคลียร์ session เก่า (ถ้ามี)
+    (async () => {
+      try { await hydrateFromCloud(); } catch { /* ออฟไลน์ — ใช้ของเดิม */ }
+      const live = await hasLiveSession();
       if (!live) {
         setUser(null);
         saveUser(null);
       }
       setIsLoading(false);
-    });
+    })();
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
