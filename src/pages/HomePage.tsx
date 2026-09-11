@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import { useMissions, useAnnouncements } from '../store/useStore';
+import { asset } from '../lib/asset';
 
 // Lesson cover CSS themes
 const coverThemes = [
@@ -173,7 +174,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-50 border-b border-blue-100 bg-white/90 backdrop-blur-xl">
         <div className="max-w-[1180px] mx-auto px-5 flex items-center justify-between h-[72px]">
           <Link to="/" className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="SciTech" className="w-[43px] h-[43px] rounded-[14px] shadow-[0_6px_14px_rgba(59,130,246,0.24)] object-cover" />
+            <img src={asset('logo.png')} alt="SciTech" className="w-[43px] h-[43px] rounded-[14px] shadow-[0_6px_14px_rgba(59,130,246,0.24)] object-cover" />
             <div>
               <strong className="block text-sm text-slate-800">SciTech Learning</strong>
               <small className="block text-xs text-slate-400">สนุกกับวิทยาศาสตร์</small>
@@ -261,7 +262,7 @@ export default function HomePage() {
 
               <div className="flex justify-center">
                 <div className="relative animate-[float_3s_ease-in-out_infinite]">
-                  <img src="/mascot.png" alt="นักวิทยาศาสตร์" className="w-[350px] h-[350px] md:w-[420px] md:h-[420px] object-contain drop-shadow-2xl" />
+                  <img src={asset('mascot.png')} alt="นักวิทยาศาสตร์" className="w-[350px] h-[350px] md:w-[420px] md:h-[420px] object-contain drop-shadow-2xl" />
                   <span className="absolute text-[35px] top-0 -left-4">🪐</span>
                   <span className="absolute text-[35px] right-[-16px] bottom-4">🚀</span>
                   <span className="absolute text-[25px] top-2 right-4">✨</span>

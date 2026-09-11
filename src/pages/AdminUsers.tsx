@@ -8,6 +8,7 @@ import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import MobileHeader from '../components/MobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
+import { asset } from '../lib/asset';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const GRADES = [1, 2, 3, 4, 5, 6];
@@ -842,7 +843,7 @@ export default function AdminUsers() {
                   <p>ด.ช. สมชาย ใจดี,somchai,1234,3,3/1</p>
                   <p>ด.ญ. สมหญิง สดใส,somying,1234,3,3/2</p>
                 </div>
-                <a href="/example_students.csv" download className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2">⬇️ ดาวน์โหลดตัวอย่าง CSV</a>
+                <a href={asset('example_students.csv')} download className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2">⬇️ ดาวน์โหลดตัวอย่าง CSV</a>
               </div>
 
               {/* Preview Table */}

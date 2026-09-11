@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
+import { asset } from '../lib/asset';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -38,7 +39,7 @@ export default function LoginPage() {
       {/* Navbar */}
       <nav className="flex items-center justify-between px-4 md:px-8 py-3 md:py-4 bg-white/80 backdrop-blur-md shadow-sm border-b border-blue-100">
         <Link to="/" className="flex items-center gap-3">
-          <img src="/logo.png" alt="SciTech" className="w-10 h-10 md:w-12 md:h-12 rounded-2xl shadow-fun object-cover" />
+          <img src={asset('logo.png')} alt="SciTech" className="w-10 h-10 md:w-12 md:h-12 rounded-2xl shadow-fun object-cover" />
           <div>
             <p className="font-bold text-base md:text-lg text-gradient">SciTech Learning</p>
             <p className="text-[10px] md:text-xs text-slate-400">เรียนรู้วิทยาศาสตร์และเทคโนโลยี</p>
@@ -52,7 +53,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
-            <img src="/logo.png" alt="SciTech" className="w-20 h-20 rounded-3xl shadow-xl mx-auto mb-4 animate-float object-cover" />
+            <img src={asset('logo.png')} alt="SciTech" className="w-20 h-20 rounded-3xl shadow-xl mx-auto mb-4 animate-float object-cover" />
             <h1 className="text-2xl md:text-3xl font-bold text-gradient mb-2">เข้าสู่ระบบ</h1>
             <p className="text-slate-500 text-sm">เลือกบทบาทของคุณเพื่อเข้าสู่ระบบ</p>
           </div>
