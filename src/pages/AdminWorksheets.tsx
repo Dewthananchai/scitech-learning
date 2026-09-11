@@ -6,6 +6,7 @@ import { GRADES, Worksheet, WorksheetQuestion, WorksheetSubmission } from '../ty
 import type { AppUser } from '../store/useStore';
 import AdminSidebar from '../components/AdminSidebar';
 import MobileHeader from '../components/MobileHeader';
+import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const SUBJECTS = ['วิทยาศาสตร์', 'คณิตศาสตร์', 'ภาษาไทย', 'ภาษาอังกฤษ', 'สังคมศึกษา'];
 const CHOICE_LABELS = ['ก', 'ข', 'ค', 'ง'];
@@ -42,66 +43,89 @@ export default function AdminWorksheets({ defaultTab = 'create' }: { defaultTab?
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50/60 to-sky-50">
-      <MobileHeader title="จัดการใบงาน" />
+    <div className="teacher-page min-h-screen">
+      <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
+      <MobileHeader title="จัดการใบงาน" />
 
-      <div className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-5xl">
-        {/* Page header + Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800">🗂️ จัดการใบงาน</h2>
-            <p className="text-slate-500 text-sm mt-1">สร้างใบงาน จัดการใบงานที่สร้างไว้ และตรวจงานนักเรียนในหน้าเดียว</p>
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+        {/* Main Card */}
+        <div className="rounded-3xl shadow-xl shadow-green-900/5 border border-green-100 overflow-hidden bg-white">
+          {/* Green Gradient Topbar */}
+          <div className="relative overflow-hidden bg-gradient-to-r from-green-700 via-green-600 to-emerald-600 p-6 text-white">
+            <div className="teacher-glow-overlay" />
+            <div className="relative z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-sm text-emerald-100 text-xs font-semibold mb-2">
+                <span>🗂️ ระบบใบงานและการตรวจงาน</span>
+                <span>•</span>
+                <span>ใบงานทั้งหมด {worksheets.length} ชุด</span>
+              </div>
+              <h1 className="text-xl md:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                <span>🗂️ จัดการใบงาน</span>
+              </h1>
+              <p className="text-emerald-100/90 text-xs md:text-sm mt-1">
+                สร้างใบงาน · จัดการใบงานที่สร้างไว้ · ตรวจงานนักเรียนในหน้าเดียว
+              </p>
+            </div>
           </div>
-          {/* Tab switcher */}
-          <div className="inline-flex bg-white rounded-2xl border-[1.5px] border-slate-200 p-1 shadow-sm self-start flex-wrap gap-1">
-            <button
-              onClick={() => setTab('create')}
-              className={`px-4 md:px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                tab === 'create'
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-md shadow-green-600/25'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              ✨ สร้างใบงาน
-            </button>
-            <button
-              onClick={() => setTab('saved')}
-              className={`px-4 md:px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-1.5 ${
-                tab === 'saved'
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-md shadow-green-600/25'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span>📂 ใบงานที่สร้างไว้</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                tab === 'saved' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {worksheets.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setTab('grade')}
-              className={`px-4 md:px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                tab === 'grade'
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-md shadow-green-600/25'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              📋 ตรวจใบงาน
-            </button>
+
+          {/* Subtabs Bar */}
+          <div className="bg-slate-50/80 border-b border-slate-100 px-4 md:px-6 py-3 overflow-x-auto">
+            <div className="flex items-center gap-2 min-w-max">
+              <button
+                type="button"
+                onClick={() => setTab('create')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 ${
+                  tab === 'create'
+                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-md shadow-green-600/25 scale-[1.02]'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>✨ สร้างใบงาน</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('saved')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 ${
+                  tab === 'saved'
+                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-md shadow-green-600/25 scale-[1.02]'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>📂 ใบงานที่สร้างไว้</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  tab === 'saved' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {worksheets.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('grade')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 ${
+                  tab === 'grade'
+                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-md shadow-green-600/25 scale-[1.02]'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>📋 ตรวจใบงาน</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Body Content */}
+          <div className="p-4 md:p-6">
+            {tab === 'create' && <CreateTab onWorksheetCreated={() => setTab('saved')} />}
+            {tab === 'saved' && (
+              <SavedWorksheetsTab
+                onGoToCreate={() => setTab('create')}
+                onGoToGrade={handleGradeWorksheet}
+              />
+            )}
+            {tab === 'grade' && <GradeTab initialWorksheet={gradingWorksheet} />}
           </div>
         </div>
-
-        {tab === 'create' && <CreateTab onWorksheetCreated={() => setTab('saved')} />}
-        {tab === 'saved' && (
-          <SavedWorksheetsTab
-            onGoToCreate={() => setTab('create')}
-            onGoToGrade={handleGradeWorksheet}
-          />
-        )}
-        {tab === 'grade' && <GradeTab initialWorksheet={gradingWorksheet} />}
-      </div>
+      </main>
     </div>
   );
 }
@@ -231,16 +255,11 @@ function CreateTab({ onWorksheetCreated }: { onWorksheetCreated?: () => void }) 
   return (
     <div>
       {/* Form Card */}
-      <div className="bg-white rounded-3xl shadow-xl shadow-green-900/5 border border-green-100 overflow-hidden mb-8">
-        {/* Green topbar */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-green-700 via-green-600 to-emerald-600 px-6 py-5 text-white">
-          <div className="absolute inset-0 opacity-30 pointer-events-none"
-            style={{ background: 'radial-gradient(circle at 90% -10%, rgba(255,255,255,.5), transparent 45%), radial-gradient(circle at 10% 120%, rgba(255,255,255,.3), transparent 40%)' }}
-          />
-          <div className="relative z-10">
-            <h3 className="font-bold text-lg">📝 ข้อมูลใบงาน</h3>
-            <p className="text-xs opacity-90 mt-0.5">ใช้ข้อมูลชั้นเรียน วิชา และหน่วยการเรียนรู้ที่มีในระบบ</p>
-          </div>
+      <div className="bg-white rounded-3xl shadow-xl shadow-green-900/5 border border-green-100 overflow-hidden">
+        {/* Section header */}
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/60">
+          <h3 className="font-bold text-slate-800">📝 ข้อมูลใบงาน</h3>
+          <p className="text-xs text-slate-500 mt-0.5">ใช้ข้อมูลชั้นเรียน วิชา และหน่วยการเรียนรู้ที่มีในระบบ</p>
         </div>
 
         <div className="p-5 md:p-7 space-y-4">
@@ -568,35 +587,26 @@ function SavedWorksheetsTab({
     <div className="space-y-6">
       {/* Main Card with Green Topbar */}
       <div className="bg-white rounded-3xl shadow-xl shadow-green-900/5 border border-green-100 overflow-hidden mb-8">
-        {/* Green topbar */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-green-700 via-green-600 to-emerald-600 px-6 py-5 text-white">
-          <div
-            className="absolute inset-0 opacity-30 pointer-events-none"
-            style={{
-              background:
-                'radial-gradient(circle at 90% -10%, rgba(255,255,255,.5), transparent 45%), radial-gradient(circle at 10% 120%, rgba(255,255,255,.3), transparent 40%)',
-            }}
-          />
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-lg">📂 ใบงานที่สร้างไว้</h3>
-                <span className="bg-white/20 backdrop-blur-sm text-white text-xs font-black px-2.5 py-0.5 rounded-full border border-white/30">
-                  {worksheets.length} ชุด
-                </span>
-              </div>
-              <p className="text-xs opacity-90 mt-0.5">
-                รายการใบงานทั้งหมดในระบบ สามารถค้นหา ตรวจสอบ เผยแพร่ หรือนำไปตรวจให้คะแนนได้
-              </p>
+        {/* Section header */}
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-800">📂 ใบงานที่สร้างไว้</h3>
+              <span className="bg-green-100 text-green-700 text-xs font-black px-2.5 py-0.5 rounded-full border border-green-200">
+                {worksheets.length} ชุด
+              </span>
             </div>
-            <button
-              onClick={onGoToCreate}
-              className="self-start sm:self-auto px-4 py-2 bg-white text-green-700 font-bold text-xs rounded-xl shadow-md hover:bg-green-50 hover:shadow-lg transition-all flex items-center gap-1.5 shrink-0"
-            >
-              <span>✨</span>
-              <span>สร้างใบงานใหม่</span>
-            </button>
+            <p className="text-xs text-slate-500 mt-0.5">
+              รายการใบงานทั้งหมดในระบบ สามารถค้นหา ตรวจสอบ เผยแพร่ หรือนำไปตรวจให้คะแนนได้
+            </p>
           </div>
+          <button
+            onClick={onGoToCreate}
+            className="self-start sm:self-auto px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold text-xs rounded-xl shadow-md shadow-green-600/25 hover:shadow-lg transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <span>✨</span>
+            <span>สร้างใบงานใหม่</span>
+          </button>
         </div>
 
         {/* Card Body */}
@@ -1162,14 +1172,10 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
   return (
     <div>
       <div className="bg-white rounded-3xl shadow-xl shadow-green-900/5 border border-green-100 overflow-hidden">
-        {/* Green topbar */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-green-700 via-green-600 to-emerald-600 px-6 py-5 text-white">
-          <div className="absolute inset-0 opacity-30 pointer-events-none"
-            style={{ background: 'radial-gradient(circle at 90% -10%, rgba(255,255,255,.5), transparent 45%)' }} />
-          <div className="relative z-10">
-            <h3 className="font-bold text-lg">📋 ตรวจงานนักเรียน</h3>
-            <p className="text-xs opacity-90 mt-0.5">กรองข้อมูลเพื่อค้นหาใบงานที่ต้องการตรวจ</p>
-          </div>
+        {/* Section header */}
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/60">
+          <h3 className="font-bold text-slate-800">📋 ตรวจงานนักเรียน</h3>
+          <p className="text-xs text-slate-500 mt-0.5">กรองข้อมูลเพื่อค้นหาใบงานที่ต้องการตรวจ</p>
         </div>
 
         <div className="p-5 md:p-7">
