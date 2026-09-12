@@ -61,6 +61,11 @@ export async function signInWithUsername(
   // 3) สร้างบัญชี auth อัตโนมัติ (รหัสผ่านถูก bcrypt ฝั่ง GoTrue)
   //    ถ้าสร้างไม่สำเร็จ (เช่น email rate limit เพราะโปรเจกต์ยังเปิด
   //    "Confirm email") → ไม่ทำให้ล็อกอินพัง: ยังใช้ทะเบียนเดิมต่อได้
+  //    และถ้าเพิ่งโดน rate limit จะข้ามการลองซ้ำ 10 นาที เพื่อไม่เปลืองโควตาอีเมล
+  if (isRateLimitBackoffActive()) {
+    console.info('[auth] ข้ามการสร้างบัญชี GoTrue ชั่วคราว (รอพ้นเพดานอีเมลของ Supabase)');
+    return legacyLoginResult(register);
+  }
   const { data: upData, error: upErr } = await supabase.auth.signUp({
     email,
     password,
@@ -77,6 +82,7 @@ export async function signInWithUsername(
   });
   if (upErr && !/already registered|already exists/i.test(upErr.message)) {
     console.warn(`[auth] สร้างบัญชี GoTrue ยังไม่สำเร็จ (${upErr.message}) — ล็อกอินแบบทะเบียนเดิม`);
+    if (/rate limit|over_email_send_rate_limit/i.test(upErr.message)) markRateLimitBackoff();
   }
 
   // 4) ถ้าสมัครสำเร็จ (ได้ session กลับมาเลย) → ใช้ session นั้นทันที
@@ -91,6 +97,11 @@ export async function signInWithUsername(
     const meta = (retry.data.user.user_metadata ?? {}) as Record<string, unknown>;
     return { via: 'supabase', user: await toAuthUser(supabase, meta, username) };
   }
+  return legacyLoginResult(register);
+}
+
+/** ผลลัพธ์ล็อกอินแบบทะเบียนเดิม (ใช้เมื่อ GoTrue ยังไม่พร้อม/โดนจำกัดอีเมล) */
+function legacyLoginResult(register: RegisterUser): { user: AuthUser; via: 'legacy' } {
   return {
     via: 'legacy',
     user: {
@@ -104,7 +115,17 @@ export async function signInWithUsername(
   };
 }
 
-/** สิทธิ์จริงมาจากตาราง app_admins ฝั่งเซิร์ฟเวอร์ (is_admin) — ไม่เชื่อ metadata ใน JWT */
+/* พักการสร้างบัญชี GoTrue 10 นาทีหลังโดนเพดานอีเมล — ล็อกอินปกติไม่กระทบ */
+const RATE_LIMIT_KEY = '__auth_signup_backoff_until__';
+function markRateLimitBackoff(): void {
+  try { localStorage.setItem(RATE_LIMIT_KEY, String(Date.now() + 10 * 60 * 1000)); } catch { /* ignore */ }
+}
+function isRateLimitBackoffActive(): boolean {
+  try {
+    const until = Number(localStorage.getItem(RATE_LIMIT_KEY) || 0);
+    return Number.isFinite(until) && Date.now() < until;
+  } catch { return false; }
+}
 async function toAuthUser(
   supabase: NonNullable<ReturnType<typeof getClient>>,
   meta: Record<string, unknown>,
