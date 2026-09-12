@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import { useWorksheets, useUsers } from '../store/useStore';
+import { getM1BankCount } from '../data/m1BankData';
+import { getOnetBankCount } from '../data/onetBankData';
 import AdminSidebar from '../components/AdminSidebar';
 import MobileHeader from '../components/MobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
@@ -14,8 +16,29 @@ export default function AdminDashboard() {
   const { users } = useUsers();
 
   const studentCount = useMemo(() => {
-    return users.filter(u => u.role === 'student' && u.is_active).length || 45;
+    // is_active !== false — ทะเบียนที่ไม่ได้ระบุฟิลด์ถือว่าใช้งาน (ไม่ใช้ค่า default ปลอม)
+    return users.filter(u => u.role === 'student' && u.is_active !== false).length;
   }, [users]);
+
+  // คลังข้อสอบทั้งหมด = ข้อสอบในชั้นเรียน + O-NET + ข้อสอบเข้า ม.1 (รีเฟรชเมื่อคลังถูกแก้)
+  const [onetCount, setOnetCount] = useState(() => getOnetBankCount());
+  const [m1Count, setM1Count] = useState(() => getM1BankCount());
+  useEffect(() => {
+    const refresh = () => { setOnetCount(getOnetBankCount()); setM1Count(getM1BankCount()); };
+    window.addEventListener('onet-bank-updated', refresh);
+    window.addEventListener('m1-bank-updated', refresh);
+    // ดึงข้อมูลล่าสุดจากคลาวด์อาจมาช้ากว่า mount — เช็คซ้ำหลังโหลด/โฟกัส
+    const t1 = setTimeout(refresh, 1500);
+    const t2 = setTimeout(refresh, 4000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('onet-bank-updated', refresh);
+      window.removeEventListener('m1-bank-updated', refresh);
+      window.removeEventListener('focus', refresh);
+      clearTimeout(t1); clearTimeout(t2);
+    };
+  }, []);
+  const totalExamQuestions = questions.length + onetCount + m1Count;
 
   const stats = [
     {
@@ -40,13 +63,13 @@ export default function AdminDashboard() {
     },
     {
       label: 'คลังข้อสอบทั้งหมด',
-      value: questions.length,
+      value: totalExamQuestions,
       icon: '❓',
       href: '/admin/questions',
       accent: 'border-amber-200 hover:border-amber-400',
       iconBg: 'bg-amber-100 text-amber-700',
       textColor: 'text-amber-700',
-      sub: 'ปรนัยและอัตนัยทุกชั้น',
+      sub: `ในชั้นเรียน ${questions.length} · O-NET ${onetCount} · ม.1 ${m1Count}`,
     },
     {
       label: 'นักเรียนในระบบ',

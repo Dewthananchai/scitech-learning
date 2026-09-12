@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useMemo } from 'react';
 import { useAppStore } from '../store/AppContext';
-import { useLessonSession, useLessonProgress, useMissions, useAnnouncements, useWorksheets, useWorksheetSubmissions } from '../store/useStore';
+import { useLessonSession, useLessonProgress, useMissions, useAnnouncements, useWorksheets, useWorksheetSubmissions, useCalendarEvents } from '../store/useStore';
 import { useAuth } from '../store/AuthContext';
 import StudentNavigationBar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
@@ -16,6 +16,7 @@ export default function StudentDashboard() {
   const { announcements } = useAnnouncements();
   const { worksheets } = useWorksheets();
   const { submissions } = useWorksheetSubmissions();
+  const { events: calendarEvents } = useCalendarEvents();
 
   // Find the latest in-progress lesson
   const latestInProgress = useMemo(() => {
@@ -62,6 +63,52 @@ export default function StudentDashboard() {
   }, [worksheets, submissions, user]);
   const worksheetIsSubmitted = (wid: number) =>
     submissions.some(s => s.worksheet_id === wid && s.student_id === user?.id);
+
+  // ปฏิทินของฉัน — ข้อมูลจริงจากหน้าจัดการปฏิทิน (กรองตามชั้นของนักเรียน)
+  const MONTHS_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const CAL_TYPE_ICONS: Record<string, string> = { lesson: '📚', exam: '📝', holiday: '🏖️', assignment: '📋', event: '🎉' };
+
+  const myCalendarEvents = useMemo(() => {
+    if (!user) return [];
+    return calendarEvents.filter(e => {
+      // กรองตามชั้นเรียน: ไม่ระบุ = ทุกชั้น
+      if (e.grade_levels && e.grade_levels.length > 0 && !e.grade_levels.includes(user.grade_level || 0)) return false;
+      return true;
+    });
+  }, [calendarEvents, user]);
+
+  const todayDate = new Date();
+  const calYear = todayDate.getFullYear();
+  const calMonth = todayDate.getMonth();
+  const todayStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+  const firstWeekday = new Date(calYear, calMonth, 1).getDay(); // 0=อาทิตย์
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+
+  const isEventOnDay = (day: number) => {
+    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return myCalendarEvents.some(e => e.date === dateStr || (e.end_date && dateStr >= e.date && dateStr <= e.end_date));
+  };
+
+  // เซลล์ปฏิทิน: ช่องว่างหน้าแรก + วันที่ 1..สิ้นเดือน (โชว์ไม่เกิน 5 แถว = 35 ช่อง)
+  const calendarCells = useMemo(() => {
+    const cells: { d: number | null; ev: boolean }[] = [];
+    for (let i = 0; i < firstWeekday && cells.length < 35; i++) cells.push({ d: null, ev: false });
+    for (let day = 1; day <= daysInMonth && cells.length < 35; day++) cells.push({ d: day, ev: isEventOnDay(day) });
+    return cells;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstWeekday, daysInMonth, myCalendarEvents]);
+
+  const upcomingMyEvents = useMemo(() => {
+    return myCalendarEvents
+      .filter(e => e.date >= todayStr)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 3);
+  }, [myCalendarEvents, todayStr]);
+
+  const formatEventDate = (iso: string) => {
+    const [, m, d] = iso.split('-').map(Number);
+    return `${d} ${MONTHS_TH[(m || 1) - 1]?.slice(0, 3) ?? ''}`;
+  };
 
   // Science facts for kids
   const funFact = "รู้หรือไม่? แสงอาทิตย์เดินทางมาถึงโลกเรา ใช้เวลาเพียง 8 นาที 20 วินาที เท่านั้นนะ! ☀️🚀";
@@ -290,11 +337,11 @@ export default function StudentDashboard() {
               </span>
             </div>
 
-            {/* Mini Calendar Preview */}
+            {/* Mini Calendar Preview — ข้อมูลจริงจากระบบปฏิทิน */}
             <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-100 rounded-2xl p-3 mb-3">
               {/* Month label */}
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-extrabold text-violet-700">กันยายน 2568</span>
+                <span className="text-xs font-extrabold text-violet-700">{MONTHS_TH[calMonth]} {calYear + 543}</span>
                 <span className="text-[10px] bg-violet-200 text-violet-800 font-bold px-2 py-0.5 rounded-full">เดือนนี้</span>
               </div>
               {/* Day headers */}
@@ -303,36 +350,32 @@ export default function StudentDashboard() {
                   <div key={d} className="text-center text-[9px] font-bold text-violet-400">{d}</div>
                 ))}
               </div>
-              {/* Sample dates — first weeks of Sep */}
+              {/* Dates — วันที่มีกิจกรรมจริงไฮไลต์ */}
               <div className="grid grid-cols-7 gap-0.5">
-                {[
-                  { d: '', ev: false }, { d: '1', ev: false }, { d: '2', ev: false }, { d: '3', ev: true }, { d: '4', ev: false }, { d: '5', ev: false }, { d: '6', ev: false },
-                  { d: '7', ev: false }, { d: '8', ev: false }, { d: '9', ev: false }, { d: '10', ev: true }, { d: '11', ev: false }, { d: '12', ev: true }, { d: '13', ev: false },
-                  { d: '14', ev: false }, { d: '15', ev: false }, { d: '16', ev: false }, { d: '17', ev: false }, { d: '18', ev: false }, { d: '19', ev: false }, { d: '20', ev: false },
-                ].map((cell, i) => (
+                {calendarCells.map((cell, i) => (
                   <div
                     key={i}
                     className={`text-center text-[10px] font-bold leading-5 w-5 h-5 mx-auto rounded-full ${
                       cell.ev ? 'bg-violet-500 text-white' : cell.d ? 'text-slate-600' : ''
                     }`}
                   >
-                    {cell.d}
+                    {cell.d ?? ''}
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Upcoming events */}
+            {/* Upcoming events — จากระบบจริง */}
             <div className="space-y-1.5">
-              {[
-                { emoji: '🔬', label: 'ทดลองวิทยาศาสตร์', date: '3 ก.ย.' },
-                { emoji: '📝', label: 'สอบกลางภาค', date: '10 ก.ย.' },
-                { emoji: '🏫', label: 'กิจกรรมวันวิทยาศาสตร์', date: '12 ก.ย.' },
-              ].map((ev, i) => (
-                <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl">
-                  <span className="text-base">{ev.emoji}</span>
-                  <span className="text-xs font-bold text-slate-700 flex-1 truncate">{ev.label}</span>
-                  <span className="text-[10px] font-extrabold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-lg shrink-0">{ev.date}</span>
+              {upcomingMyEvents.length === 0 ? (
+                <div className="p-2 bg-slate-50 rounded-xl text-center">
+                  <span className="text-xs text-slate-400 font-medium">ยังไม่มีกิจกรรมที่จะถึง</span>
+                </div>
+              ) : upcomingMyEvents.map(ev => (
+                <div key={ev.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl">
+                  <span className="text-base">{CAL_TYPE_ICONS[ev.type] || '🎉'}</span>
+                  <span className="text-xs font-bold text-slate-700 flex-1 truncate">{ev.title}</span>
+                  <span className="text-[10px] font-extrabold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-lg shrink-0">{formatEventDate(ev.date)}</span>
                 </div>
               ))}
             </div>
