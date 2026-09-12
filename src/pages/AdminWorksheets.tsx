@@ -5,7 +5,7 @@ import { useWorksheets, useWorksheetSubmissions, useUsers, useWorksheets as useW
 import { GRADES, Worksheet, WorksheetQuestion, WorksheetSubmission } from '../types';
 import type { AppUser } from '../store/useStore';
 import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const SUBJECTS = ['วิทยาศาสตร์', 'คณิตศาสตร์', 'ภาษาไทย', 'ภาษาอังกฤษ', 'สังคมศึกษา'];
@@ -61,7 +61,7 @@ export default function AdminWorksheets({ defaultTab = 'create' }: { defaultTab?
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
-      <MobileHeader title="จัดการใบงาน" />
+      <TeacherMobileHeader title="จัดการใบงาน" />
 
       <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}

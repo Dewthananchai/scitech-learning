@@ -6,13 +6,8 @@ import { useAuth } from '../store/AuthContext';
 const adminNav = [
   { path: '/admin', label: 'แดชบอร์ด', icon: '📋', color: 'from-blue-400 to-indigo-500' },
   { path: '/admin/lessons', label: 'คลังบทเรียน', icon: '📦', color: 'from-emerald-400 to-teal-500' },
-  { path: '/admin/units', label: 'หน่วยการเรียนรู้', icon: '📚', color: 'from-violet-400 to-purple-500' },
   { path: '/admin/questions', label: 'คลังข้อสอบ', icon: '📄', color: 'from-amber-400 to-orange-500' },
   { path: '/admin/worksheets', label: 'จัดการใบงาน', icon: '🗂️', color: 'from-green-400 to-emerald-500' },
-  { path: '/admin/announcements', label: 'จัดการประกาศ', icon: '📢', color: 'from-pink-400 to-rose-500' },
-  { path: '/admin/calendar', label: 'จัดการปฏิทิน', icon: '📅', color: 'from-cyan-400 to-teal-500' },
-  { path: '/admin/users', label: 'จัดการผู้ใช้และการเข้าเรียน', icon: '👥', color: 'from-lime-400 to-green-500' },
-  { path: '/admin/missions', label: 'จัดการภารกิจ', icon: '🎯', color: 'from-fuchsia-400 to-pink-500' },
   { path: '/admin/profile', label: 'โปรไฟล์ของฉัน', icon: '🏆', color: 'from-amber-400 to-yellow-500' },
 ];
 

@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import { useAuth } from '../store/AuthContext';
 import { useMissions, useLessonProgress, useLessonSession, useAttendance } from '../store/useStore';
 import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import StudentSidebar from '../components/StudentSidebar';
 import AdminSidebar from '../components/AdminSidebar';
 import { STUDENT_THEME_CSS, TEACHER_THEME_CSS } from '../styles/studentTheme';
@@ -140,7 +141,9 @@ export default function ProfilePage() {
     <div className={user.role === 'student' ? 'st-page min-h-screen' : 'teacher-page min-h-screen'}>
       <style>{user.role === 'student' ? STUDENT_THEME_CSS : TEACHER_THEME_CSS}</style>
       {user.role === 'student' ? <StudentSidebar /> : <AdminSidebar />}
-      <MobileHeader title={user.role === 'admin' ? 'โปรไฟล์ผู้สอน' : 'โปรไฟล์ของฉัน'} />
+      {user.role === 'student'
+        ? <MobileHeader title="โปรไฟล์ของฉัน" />
+        : <TeacherMobileHeader title="โปรไฟล์ผู้สอน" />}
 
       <main className={`${user.role === 'student' ? 'md:ml-20 lg:ml-64' : 'md:ml-64'} pt-16 md:pt-16 lg:pt-4 pb-28 md:pb-12 px-3.5 md:px-6 transition-all`}>
         {/* Header */}

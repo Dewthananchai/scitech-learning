@@ -6,7 +6,7 @@ import { useLessonSession } from '../store/useStore';
 import { useLessonProgress } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
 import { asset } from '../lib/asset';
 import { adminCreateAuthUser, setAuthPassword } from '../lib/supabaseAuth';
@@ -261,7 +261,7 @@ export default function AdminUsers() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
-      <MobileHeader title="จัดการผู้ใช้และการเข้าเรียน" />
+      <TeacherMobileHeader title="จัดการผู้ใช้และการเข้าเรียน" />
 
       <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}

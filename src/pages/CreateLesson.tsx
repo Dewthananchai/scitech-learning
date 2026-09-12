@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/AppContext';
 import type { Question, LessonMedia } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const steps = [
@@ -588,7 +588,7 @@ export default function CreateLesson() {
   return (
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
-      <MobileHeader title="สร้างบทเรียน" />
+      <TeacherMobileHeader title="สร้างบทเรียน" />
       <AdminSidebar />
 
       <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">

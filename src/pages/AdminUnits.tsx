@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { GRADES } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 type ViewMode = 'grid' | 'list';
@@ -101,7 +101,7 @@ export default function AdminUnits() {
   return (
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
-      <MobileHeader title="หน่วยการเรียนรู้" />
+      <TeacherMobileHeader title="หน่วยการเรียนรู้" />
       <AdminSidebar />
 
       {/* Main Content */}

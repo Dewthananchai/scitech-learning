@@ -3,7 +3,7 @@ import { useAppStore } from '../store/AppContext';
 import { GRADES, ONET_SUBJECTS, M1_SUBJECTS } from '../types';
 import type { Question, SubjectUnit } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import { M1BankContent } from './AdminQuestionsM1';
 import { getM1BankCount } from '../data/m1BankData';
 import { AdminQuestionsONetBank } from './AdminQuestionsONet';
@@ -395,7 +395,7 @@ export default function AdminQuestions() {
   return (
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
-      <MobileHeader title="คลังข้อสอบ" />
+      <TeacherMobileHeader title="คลังข้อสอบ" />
       <AdminSidebar />
       <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}

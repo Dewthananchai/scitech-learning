@@ -6,7 +6,7 @@ import { useWorksheets, useUsers } from '../store/useStore';
 import { getM1BankCount } from '../data/m1BankData';
 import { getOnetBankCount } from '../data/onetBankData';
 import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 export default function AdminDashboard() {
@@ -86,7 +86,7 @@ export default function AdminDashboard() {
   return (
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
-      <MobileHeader title="แดชบอร์ดครูผู้สอน" />
+      <TeacherMobileHeader title="แดชบอร์ดครูผู้สอน" />
       <AdminSidebar />
 
       {/* Main Content Area */}

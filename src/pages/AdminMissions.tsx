@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useMissions, useLessons } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 import type { Mission } from '../types';
@@ -82,7 +82,7 @@ export default function AdminMissions() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
-      <MobileHeader title="จัดการภารกิจ" />
+      <TeacherMobileHeader title="จัดการภารกิจ" />
 
       <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}

@@ -4,7 +4,7 @@ import { useAppStore } from '../store/AppContext';
 import { GRADES } from '../types';
 import type { Lesson } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 function getYouTubeId(url: string): string | null {
@@ -125,7 +125,7 @@ export default function AdminLessons() {
   return (
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
-      <MobileHeader title="คลังบทเรียน" />
+      <TeacherMobileHeader title="คลังบทเรียน" />
       <AdminSidebar />
 
       {/* Main Content */}

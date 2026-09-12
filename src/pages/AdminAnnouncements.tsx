@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAnnouncements } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
-import MobileHeader from '../components/MobileHeader';
+import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 import type { Announcement } from '../types';
@@ -77,7 +77,7 @@ export default function AdminAnnouncements() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
-      <MobileHeader title="จัดการประกาศ" />
+      <TeacherMobileHeader title="จัดการประกาศ" />
       
       <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
