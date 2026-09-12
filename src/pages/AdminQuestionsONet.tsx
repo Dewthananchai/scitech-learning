@@ -149,13 +149,25 @@ export const AdminQuestionsONetBank: React.FC = () => {
         const header = rows[0]?.map(c => c.trim().toLowerCase()) || [];
         const hasHeader = header.includes('level') && header.includes('question');
         const start = hasHeader ? 1 : 0;
-        const withSet = hasHeader ? header.includes('set') : rows[start]?.length >= 10;
-        const typeCol = hasHeader ? header.indexOf('type') : -1;
-        /* ตำแหน่งคอลัมน์ตามรูปแบบมาตรฐาน (มี/ไม่มี set) */
-        const iSubject = withSet ? 3 : 2;
-        const iQ = withSet ? 4 : 3;
-        const iC1 = iQ + 1, iC2 = iQ + 2, iC3 = iQ + 3, iC4 = iQ + 4;
-        const iAns = iQ + 5, iExp = iQ + 6;
+        /* ตำแหน่งคอลัมน์อ่านจากหัวไฟล์เป็นหลัก (รองรับทุกรูปแบบ: มี/ไม่มี set, มี/ไม่มี type)
+           รูปแบบมาตรฐาน: level, year, set, subject, type, question, choice1..4, answer, explain */
+        const hasSetCol = hasHeader && header.includes('set');
+        const col = (name: string, fallback: number) => {
+          const idx = hasHeader ? header.indexOf(name) : -1;
+          return idx >= 0 ? idx : fallback;
+        };
+        const iLevel = col('level', 0);
+        const iYear = col('year', 1);
+        const iSet = hasSetCol ? header.indexOf('set') : -1;
+        const iSubject = col('subject', hasSetCol ? 3 : 2);
+        const iType = hasHeader ? header.indexOf('type') : -1;
+        const iQ = col('question', hasSetCol ? 4 : 3);
+        const iC1 = col('choice1', iQ + 1);
+        const iC2 = col('choice2', iQ + 2);
+        const iC3 = col('choice3', iQ + 3);
+        const iC4 = col('choice4', iQ + 4);
+        const iAns = col('answer', iQ + 5);
+        const iExp = col('explain', iQ + 6);
         const YN_TYPES = ['yn', 'yesno', 'y/n', 'ใช่/ไม่ใช่', 'ใช่-ไม่ใช่'];
         let ok = 0, fail = 0;
         const nextLevels = [...levels];
@@ -164,12 +176,12 @@ export const AdminQuestionsONetBank: React.FC = () => {
         for (let i = start; i < rows.length; i++) {
           const r = rows[i];
           const get = (idx: number) => (idx >= 0 && idx < r.length ? r[idx] : '');
-          const needed = (withSet ? iC4 : iC4) + 1;
+          const needed = Math.max(iC4, iAns, iExp) + 1;
           const isBlank = r.slice(0, Math.min(needed, r.length)).every((c) => !c?.trim());
           if (isBlank) continue;
-          const level = (get(0) || ONET_GENERAL).trim() || ONET_GENERAL;
-          const year = (get(1) || ONET_GENERAL).trim() || ONET_GENERAL;
-          const set = withSet ? ((get(2) || '1').trim() || '1') : '1';
+          const level = (get(iLevel) || ONET_GENERAL).trim() || ONET_GENERAL;
+          const year = (get(iYear) || ONET_GENERAL).trim() || ONET_GENERAL;
+          const set = iSet >= 0 ? ((get(iSet) || '1').trim() || '1') : '1';
           const subject = (get(iSubject) || '').trim().toLowerCase();
           const question = unescNewlines(get(iQ) || '').trim();
           const c1 = unescNewlines(get(iC1) || '').trim();
@@ -179,7 +191,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
           const answerIdx = parseAnswerIndex(get(iAns));
           const explain = unescNewlines(get(iExp) || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
           /* ชนิดข้อสอบ: type = yn → ใช่/ไม่ใช่ (2 ตัวเลือก) หรือเติม choice3/4 ว่างอัตโนมัติ */
-          const rawType = (typeCol >= 0 ? get(typeCol) : '').trim().toLowerCase();
+          const rawType = (iType >= 0 ? get(iType) : '').trim().toLowerCase();
           const isYN = YN_TYPES.includes(rawType);
           const choices = isYN
             ? [c1 || 'ใช่', c2 || 'ไม่ใช่']
