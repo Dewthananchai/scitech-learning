@@ -87,7 +87,23 @@ async function flush(): Promise<void> {
   if (!supabase || dirty.size === 0) return;
   const batch = Array.from(dirty.entries());
   dirty.clear();
-  const rows = batch.map(([id, e]) => ({ id, value: e.value, updated_at: e.updatedAt }));
+
+  // กันข้อมูลสูญหาย: ก่อนอัปโหลดทะเบียนผู้ใช้ ต้องรวมรหัสผ่านจากคลาวด์กลับเข้า
+  // สำเนาท้องถิ่นเสมอ — อุปกรณ์ที่ถือสำเนาเก่า/รหัสผ่านว่าง จะไม่มีวันลบรหัสผ่าน
+  // ของผู้ใช้บนคลาวด์ (สาเหตุของปัญหา "ล็อกอินไม่ได้" ที่เคยเกิดซ้ำ)
+  let rows = batch.map(([id, e]) => ({ id, value: e.value, updated_at: e.updatedAt }));
+  const usersEntry = batch.find(([id]) => id === USER_REGISTER_KEY);
+  if (usersEntry) {
+    const merged = await mergeUserPasswordsWithCloud(supabase, usersEntry[1].value);
+    if (merged.changed) {
+      try {
+        localStorage.setItem(USER_REGISTER_KEY, merged.value);
+        localStorage.setItem(metaKey(USER_REGISTER_KEY), String(Date.now()));
+      } catch { /* ไม่บล็อกการอัปโหลด */ }
+      rows = rows.map(r => (r.id === USER_REGISTER_KEY ? { ...r, value: merged.value } : r));
+    }
+  }
+
   const { error } = await supabase
     .from('app_state')
     .upsert(rows, { onConflict: 'id' });
@@ -147,6 +163,41 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
 }
 
 const metaKey = (id: string) => `__synced_at__${id}`;
+
+const USER_REGISTER_KEY = 'scitech_users';
+
+/** รวมรหัสผ่านจากคลาวด์เข้าสำเนาท้องถิ่นก่อนอัปโหลด — รหัสผ่านจะหายไม่ได้
+ *  (อุปกรณ์ใดก็ตามที่สำเนาล้าสมัย/รหัสผ่านว่าง จะได้รับรหัสผ่านจากคลาวด์คืนโดยอัตโนมัติ) */
+async function mergeUserPasswordsWithCloud(
+  supabase: SupabaseClient,
+  localValue: string,
+): Promise<{ value: string; changed: boolean }> {
+  try {
+    const { data, error } = await supabase
+      .from('app_state')
+      .select('value')
+      .eq('id', USER_REGISTER_KEY)
+      .maybeSingle();
+    if (error || !data?.value) return { value: localValue, changed: false };
+    const parse = (v: unknown): Array<Record<string, unknown>> =>
+      typeof v === 'string' ? JSON.parse(v) : (v as Array<Record<string, unknown>>);
+    const cloudUsers = parse(data.value);
+    const localUsers = parse(localValue);
+    const keyOf = (u: Record<string, unknown>) => String(u.username ?? '').toLowerCase().trim();
+    const cloudBy = new Map(cloudUsers.map(u => [keyOf(u), u]));
+    let changed = false;
+    const merged = localUsers.map(u => {
+      const pw = String((u.password as string | undefined) ?? '').trim();
+      const cloud = cloudBy.get(keyOf(u));
+      const cloudPw = String((cloud?.password as string | undefined) ?? '').trim();
+      if (!pw && cloudPw) { changed = true; return { ...u, password: cloudPw }; }
+      return u;
+    });
+    return changed ? { value: JSON.stringify(merged), changed: true } : { value: localValue, changed: false };
+  } catch {
+    return { value: localValue, changed: false };
+  }
+}
 
 /** เรียกหลังแอปเขียน localStorage ที่อยู่ใน SYNCED_KEYS — อัปโหลดตามหลัง */
 export function mirrorWrite(key: string): void {

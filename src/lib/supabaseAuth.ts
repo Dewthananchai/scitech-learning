@@ -135,14 +135,34 @@ function registerIdFromMeta(meta: Record<string, unknown>, fallbackUsername: str
   return Math.abs(h) || 1;
 }
 
-/** อ่านผู้ใช้จากทะเบียนเดิม (scitech_users ใน localStorage — sync จากคลาวด์แล้ว) */
+/** อ่านผู้ใช้จากทะเบียน — ดึงจากคลาวด์ก่อนเสมอ (กัน localStorage ที่อุปกรณ์ล้าสมัย), สำรองด้วย localStorage */
 async function fetchRegisterUser(username: string): Promise<RegisterUser | null> {
+  const key = username.toLowerCase().trim();
+  const pick = (users: RegisterUser[]) =>
+    users.find(u => String(u.username).toLowerCase() === key) ?? null;
+
+  // 1) คลาวด์เป็นแหล่งความจริง — อุปกรณ์ใดก็ได้ผลลัพธ์เดียวกัน
+  try {
+    const supabase = getClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('app_state')
+        .select('value')
+        .eq('id', 'scitech_users')
+        .maybeSingle();
+      if (!error && data?.value) {
+        const users = (typeof data.value === 'string' ? JSON.parse(data.value) : data.value) as RegisterUser[];
+        const hit = pick(users);
+        if (hit) return hit;
+      }
+    }
+  } catch { /* ตกไปใช้ localStorage ด้านล่าง */ }
+
+  // 2) สำรอง: สำเนาในเครื่อง (กรณีออฟไลน์/คลาวด์ล่ม)
   try {
     const raw = localStorage.getItem('scitech_users');
     if (!raw) return null;
-    const users = JSON.parse(raw) as RegisterUser[];
-    const key = username.toLowerCase().trim();
-    return users.find(u => String(u.username).toLowerCase() === key) ?? null;
+    return pick(JSON.parse(raw) as RegisterUser[]);
   } catch {
     return null;
   }
