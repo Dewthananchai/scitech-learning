@@ -80,6 +80,40 @@ function syncProfileToRegister(id: number, updates: Partial<AuthUser>) {
   } catch {}
 }
 
+/**
+ * ดึงข้อมูลโปรไฟล์ล่าสุดของผู้ใช้จากทะเบียน (scitech_users) หลัง hydrate จากคลาวด์ —
+ * รูปโปรไฟล์/ชื่อ/ห้องที่แก้จากอุปกรณ์อื่นจะได้ผลตั้งแต่เปิดแอปหรือหลังล็อกอิน
+ * โดยไม่ต้องออกจากระบบแล้วล็อกอินใหม่ (คืน object เดิมถ้าไม่มีอะไรเปลี่ยน)
+ */
+function refreshFromRegister(user: AuthUser): AuthUser {
+  try {
+    const raw = localStorage.getItem(USERS_KEY);
+    if (!raw) return user;
+    const users = JSON.parse(raw);
+    const found = users.find((u: Record<string, unknown>) =>
+      String(u.username).toLowerCase() === user.username.toLowerCase());
+    if (!found) return user;
+    const img = String(found.profile_image ?? '').trim() || undefined;
+    const next: AuthUser = {
+      ...user,
+      full_name: found.full_name != null ? String(found.full_name) : user.full_name,
+      profile_image: img,
+      grade_level: found.grade_level != null ? Number(found.grade_level) : user.grade_level,
+      classroom: found.class_name != null ? String(found.class_name) : user.classroom,
+      school_name: found.school_name != null ? String(found.school_name) : user.school_name,
+    };
+    const changed =
+      next.full_name !== user.full_name ||
+      next.profile_image !== user.profile_image ||
+      next.grade_level !== user.grade_level ||
+      next.classroom !== user.classroom ||
+      next.school_name !== user.school_name;
+    return changed ? next : user;
+  } catch {
+    return user;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadUser);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,18 +129,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!live && stored) {
         // ไม่มี GoTrue session — ตรวจว่าผู้ใช้ยังอยู่ในทะเบียนไหม
         // (legacy login ที่ยังใช้ได้ → คงไว้, ไม่งั้นออกจากระบบ)
+        let stillExists = false;
         try {
           const raw = localStorage.getItem(USERS_KEY);
           const users = raw ? JSON.parse(raw) : [];
-          const stillExists = users.some((u: Record<string, unknown>) =>
+          stillExists = users.some((u: Record<string, unknown>) =>
             String(u.username).toLowerCase() === stored.username.toLowerCase());
-          if (!stillExists) {
-            setUser(null);
-            saveUser(null);
-          }
         } catch {
+          stillExists = false;
+        }
+        if (!stillExists) {
           setUser(null);
           saveUser(null);
+          setIsLoading(false);
+          return;
+        }
+      }
+      // โปรไฟล์ล่าสุดจากทะเบียน (รูปโปรไฟล์/ชื่อ/ห้องที่แก้จากอุปกรณ์อื่น — ซิงก์ทันทีที่เปิดแอป)
+      if (stored) {
+        const refreshed = refreshFromRegister(stored);
+        if (refreshed !== stored) {
+          setUser(refreshed);
+          saveUser(refreshed);
         }
       }
       setIsLoading(false);
@@ -137,6 +181,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // (แถว app_state อ่านได้เฉพาะผู้ที่ล็อกอินแล้วหลังเปิด RLS)
     if (result.via === 'supabase') {
       try { await hydrateFromCloud(); } catch { /* ออฟไลน์ — ใช้ localStorage เดิม */ }
+      // หลัง hydrate: ทะเบียนในเครื่องอาจเพิ่งได้รูปโปรไฟล์จากอุปกรณ์อื่น — อ่านซ้ำอีกครั้ง
+      const refreshed = refreshFromRegister(finalUser);
+      if (refreshed !== finalUser) {
+        setUser(refreshed);
+        saveUser(refreshed);
+      }
     }
     return { success: true };
   }, []);
