@@ -116,6 +116,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
     q_image?: string;
     choice_images: string[];
     explain_image?: string;
+    choiceCount: 2 | 4;
   }>({
     level: '',
     year: ONET_GENERAL,
@@ -126,6 +127,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
     answer: 0,
     explain: '',
     choice_images: ['', '', '', ''],
+    choiceCount: 4,
   });
 
   /* ----- filters ----- */
@@ -144,48 +146,48 @@ export const AdminQuestionsONetBank: React.FC = () => {
       try {
         const rows = parseCSV(reader.result as string);
         if (rows.length === 0) { setImportMsg('ไฟล์ว่างเปล่า'); setImportOk(false); return; }
-        let start = 0;
         const header = rows[0]?.map(c => c.trim().toLowerCase()) || [];
-        const hasSetCol = header.includes('set');
-        if (header.includes('level')) start = 1;
+        const hasHeader = header.includes('level') && header.includes('question');
+        const start = hasHeader ? 1 : 0;
+        const withSet = hasHeader ? header.includes('set') : rows[start]?.length >= 10;
+        const typeCol = hasHeader ? header.indexOf('type') : -1;
+        /* ตำแหน่งคอลัมน์ตามรูปแบบมาตรฐาน (มี/ไม่มี set) */
+        const iSubject = withSet ? 3 : 2;
+        const iQ = withSet ? 4 : 3;
+        const iC1 = iQ + 1, iC2 = iQ + 2, iC3 = iQ + 3, iC4 = iQ + 4;
+        const iAns = iQ + 5, iExp = iQ + 6;
+        const YN_TYPES = ['yn', 'yesno', 'y/n', 'ใช่/ไม่ใช่', 'ใช่-ไม่ใช่'];
         let ok = 0, fail = 0;
         const nextLevels = [...levels];
         const nextYears = [...years];
         const nextBank = [...bank];
         for (let i = start; i < rows.length; i++) {
           const r = rows[i];
-          if (hasSetCol) {
-            if (r.length < 10) continue;
-            const isBlank = r.slice(0, 10).every((c) => !c?.trim());
-            if (isBlank) continue;
-            const level = (r[0] || ONET_GENERAL).trim() || ONET_GENERAL;
-            const year = (r[1] || ONET_GENERAL).trim() || ONET_GENERAL;
-            const set = (r[2] || '1').trim() || '1';
-            const subject = (r[3] || '').trim().toLowerCase();
-            const question = unescNewlines(r[4] || '').trim();
-            const c1 = unescNewlines(r[5] || '').trim(), c2 = unescNewlines(r[6] || '').trim(), c3 = unescNewlines(r[7] || '').trim(), c4 = unescNewlines(r[8] || '').trim();
-            const answerIdx = parseAnswerIndex(r[9]);
-            const explain = unescNewlines(r[10] || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
-            if (!subjectInfo[subject] || !question || answerIdx === -1 || !c1 || !c2 || !c3 || !c4) { fail++; continue; }
-            if (nextLevels.indexOf(level) === -1) nextLevels.push(level);
-            if (nextYears.indexOf(year) === -1) nextYears.push(year);
-            nextBank.push({ id: 'c_onet_' + Date.now() + '_' + i, isDefault: false, level, year, set, subject, q: question, choices: [c1, c2, c3, c4], answer: answerIdx, explain });
-          } else {
-            if (r.length < 9) continue;
-            const isBlank = r.slice(0, 9).every((c) => !c?.trim());
-            if (isBlank) continue;
-            const level = (r[0] || ONET_GENERAL).trim() || ONET_GENERAL;
-            const year = (r[1] || ONET_GENERAL).trim() || ONET_GENERAL;
-            const subject = (r[2] || '').trim().toLowerCase();
-            const question = unescNewlines(r[3] || '').trim();
-            const c1 = unescNewlines(r[4] || '').trim(), c2 = unescNewlines(r[5] || '').trim(), c3 = unescNewlines(r[6] || '').trim(), c4 = unescNewlines(r[7] || '').trim();
-            const answerIdx = parseAnswerIndex(r[8]);
-            const explain = unescNewlines(r[9] || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
-            if (!subjectInfo[subject] || !question || answerIdx === -1 || !c1 || !c2 || !c3 || !c4) { fail++; continue; }
-            if (nextLevels.indexOf(level) === -1) nextLevels.push(level);
-            if (nextYears.indexOf(year) === -1) nextYears.push(year);
-            nextBank.push({ id: 'c_onet_' + Date.now() + '_' + i, isDefault: false, level, year, set: '1', subject, q: question, choices: [c1, c2, c3, c4], answer: answerIdx, explain });
-          }
+          const get = (idx: number) => (idx >= 0 && idx < r.length ? r[idx] : '');
+          const needed = (withSet ? iC4 : iC4) + 1;
+          const isBlank = r.slice(0, Math.min(needed, r.length)).every((c) => !c?.trim());
+          if (isBlank) continue;
+          const level = (get(0) || ONET_GENERAL).trim() || ONET_GENERAL;
+          const year = (get(1) || ONET_GENERAL).trim() || ONET_GENERAL;
+          const set = withSet ? ((get(2) || '1').trim() || '1') : '1';
+          const subject = (get(iSubject) || '').trim().toLowerCase();
+          const question = unescNewlines(get(iQ) || '').trim();
+          const c1 = unescNewlines(get(iC1) || '').trim();
+          const c2 = unescNewlines(get(iC2) || '').trim();
+          const c3 = unescNewlines(get(iC3) || '').trim();
+          const c4 = unescNewlines(get(iC4) || '').trim();
+          const answerIdx = parseAnswerIndex(get(iAns));
+          const explain = unescNewlines(get(iExp) || '').trim() || 'ไม่มีคำอธิบายเพิ่มเติม';
+          /* ชนิดข้อสอบ: type = yn → ใช่/ไม่ใช่ (2 ตัวเลือก) หรือเติม choice3/4 ว่างอัตโนมัติ */
+          const rawType = (typeCol >= 0 ? get(typeCol) : '').trim().toLowerCase();
+          const isYN = YN_TYPES.includes(rawType);
+          const choices = isYN
+            ? [c1 || 'ใช่', c2 || 'ไม่ใช่']
+            : (!c3 && !c4 && c1 && c2 ? [c1, c2] : [c1, c2, c3, c4]);
+          if (!subjectInfo[subject] || !question || answerIdx === -1 || answerIdx >= choices.length || choices.some((c) => !c)) { fail++; continue; }
+          if (nextLevels.indexOf(level) === -1) nextLevels.push(level);
+          if (nextYears.indexOf(year) === -1) nextYears.push(year);
+          nextBank.push({ id: 'c_onet_' + Date.now() + '_' + i, isDefault: false, level, year, set, subject, q: question, choices, answer: answerIdx, explain });
           ok++;
         }
         persistBank(nextBank);
@@ -220,20 +222,21 @@ export const AdminQuestionsONetBank: React.FC = () => {
 
   const downloadSampleCSV = useCallback(() => {
     const sample = [
-      ['level', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain'],
-      [ONET_GENERAL, ONET_GENERAL, '1', 'science', 'ใส่คำถามข้อที่ 1 ที่นี่', 'ตัวเลือก 1', 'ตัวเลือก 2', 'ตัวเลือก 3', 'ตัวเลือก 4', 'B', 'คำอธิบายเฉลย'],
+      ['level', 'year', 'set', 'subject', 'type', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain'],
+      [ONET_GENERAL, ONET_GENERAL, '1', 'science', 'mc', 'ใส่คำถามข้อที่ 1 ที่นี่', 'ตัวเลือก 1', 'ตัวเลือก 2', 'ตัวเลือก 3', 'ตัวเลือก 4', 'B', 'คำอธิบายเฉลย'],
+      [ONET_GENERAL, ONET_GENERAL, '1', 'science', 'yn', 'โลกหมุนรอบดวงอาทิตย์', 'ใช่', 'ไม่ใช่', '', '', 'A', 'โลกหมุนรอบดวงอาทิตย์ 1 รอบใช้เวลา 1 ปี'],
     ]
-      .map((row) => row.map((cell) => `"${cell}"`).join(','))
-      .join('\n');
+      .map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
     downloadTextAsFile(sample, 'ตัวอย่างคลังข้อสอบONET.csv');
   }, []);
 
   const exportCurrentCSV = useCallback(() => {
-    const rows = [['level', 'year', 'set', 'subject', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain']];
+    const rows = [['level', 'year', 'set', 'subject', 'type', 'question', 'choice1', 'choice2', 'choice3', 'choice4', 'answer', 'explain']];
     bank.forEach((q) => {
+      const isYN = q.choices.length === 2;
       rows.push([
-        q.level, q.year, q.set || '1', q.subject, escNewlines(q.q),
-        escNewlines(q.choices[0]), escNewlines(q.choices[1]), escNewlines(q.choices[2]), escNewlines(q.choices[3]),
+        q.level, q.year, q.set || '1', q.subject, isYN ? 'yn' : 'mc', escNewlines(q.q),
+        escNewlines(q.choices[0] ?? ''), escNewlines(q.choices[1] ?? ''), escNewlines(q.choices[2] ?? ''), escNewlines(q.choices[3] ?? ''),
         ['A', 'B', 'C', 'D'][q.answer], escNewlines(q.explain),
       ]);
     });
@@ -354,6 +357,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
       answer: 0,
       explain: '',
       choice_images: ['', '', '', ''],
+      choiceCount: 4,
     });
     setModalMode('add');
     setEditingId('new');
@@ -376,6 +380,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
       q_image: q.q_image,
       choice_images: q.choice_images ? [...q.choice_images] : ['', '', '', ''],
       explain_image: q.explain_image,
+      choiceCount: q.choices?.length === 2 ? 2 : 4,
     });
   }, [bank, levels]);
 
@@ -387,7 +392,9 @@ export const AdminQuestionsONetBank: React.FC = () => {
     if (!editingId) return;
 
     if (!form.q.trim()) { alert('กรุณากรอกคำถาม'); return; }
-    if (form.choices.some(c => !c.trim())) { alert('กรุณากรอกตัวเลือกให้ครบทั้ง 4 ข้อ'); return; }
+    const visibleChoices = form.choices.slice(0, form.choiceCount);
+    if (visibleChoices.some(c => !c.trim())) { alert(`กรุณากรอกตัวเลือกให้ครบทั้ง ${form.choiceCount} ข้อ`); return; }
+    if (form.answer >= form.choiceCount) { alert('กรุณาเลือกคำตอบที่ถูกต้อง'); return; }
 
     const cleanChoiceImages = form.choice_images.map(c => c || undefined);
 
@@ -401,7 +408,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
         subject: form.subject,
         q: form.q.trim(),
         q_image: form.q_image || undefined,
-        choices: form.choices.map(c => c.trim()),
+        choices: form.choices.slice(0, form.choiceCount).map(c => c.trim()),
         choice_images: cleanChoiceImages.some(c => c) ? form.choice_images.map(c => c || '') : undefined,
         answer: form.answer,
         explain: form.explain.trim(),
@@ -427,7 +434,7 @@ export const AdminQuestionsONetBank: React.FC = () => {
       subject: form.subject,
       q: form.q.trim(),
       q_image: form.q_image || undefined,
-      choices: form.choices.map(c => c.trim()),
+      choices: form.choices.slice(0, form.choiceCount).map(c => c.trim()),
       choice_images: form.choice_images.some(c => c) ? form.choice_images.map(c => c || '') : undefined,
       answer: form.answer,
       explain: form.explain.trim(),
@@ -472,12 +479,13 @@ export const AdminQuestionsONetBank: React.FC = () => {
     <div className="space-y-6">
       <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 md:p-5 text-xs md:text-sm text-slate-700 leading-relaxed shadow-xs">
         <b className="text-amber-900 text-sm md:text-base flex items-center gap-2 mb-1.5">📋 รูปแบบไฟล์ CSV</b>
-        <p className="mb-2">คอลัมน์ที่ต้องการ: <code className="bg-white text-amber-800 px-2 py-0.5 rounded-lg border border-amber-200 font-mono text-xs font-bold">level, year, set, subject, question, choice1, choice2, choice3, choice4, answer, explain</code></p>
+        <p className="mb-2">คอลัมน์ที่ต้องการ: <code className="bg-white text-amber-800 px-2 py-0.5 rounded-lg border border-amber-200 font-mono text-xs font-bold">level, year, set, subject, type, question, choice1, choice2, choice3, choice4, answer, explain</code></p>
         <ul className="list-disc pl-5 space-y-1 text-slate-600">
           <li><b className="text-slate-800">level:</b> ระดับชั้น เช่น ป.6, ม.3, ม.6 หรือ "ทั่วไป"</li>
           <li><b className="text-slate-800">year:</b> ปี พ.ศ. หรือ "ทั่วไป"</li>
           <li><b className="text-slate-800">set:</b> ชุดข้อสอบ เช่น 1, 2, 3 (ถ้าไม่ใส่จะเป็นชุดที่ 1)</li>
           <li><b className="text-slate-800">subject:</b> ใส่ science, math, thai, english, social</li>
+          <li><b className="text-slate-800">type:</b> <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">mc</code> = 4 ตัวเลือก (ค่าเริ่มต้น) · <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">yn</code> = ใช่/ไม่ใช่ (2 ตัวเลือก)</li>
           <li><b className="text-slate-800">answer:</b> คำตอบที่ถูกเป็น A/B/C/D (หรือ 1-4)</li>
           <li><b className="text-slate-800">ขึ้นบรรทัดใหม่:</b> พิมพ์ <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">\n</code> ในข้อความ เช่น <code className="bg-white text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-mono text-[11px] font-bold">ก) ...\nข) ...</code></li>
         </ul>
@@ -874,9 +882,31 @@ export const AdminQuestionsONetBank: React.FC = () => {
             </div>
 
             <div>
+              <label className="block text-xs font-bold text-slate-700 mb-2">📝 ชนิดข้อสอบ</label>
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, choiceCount: 4, choices: [prev.choices[0] ?? '', prev.choices[1] ?? '', prev.choices[2] ?? '', prev.choices[3] ?? ''] }))}
+                  className={`flex-1 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${form.choiceCount === 4 ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  🔤 4 ตัวเลือก (ก-ง)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({
+                    ...prev,
+                    choiceCount: 2,
+                    choices: [prev.choices[0] || 'ใช่', prev.choices[1] || 'ไม่ใช่', '', ''],
+                    answer: Math.min(prev.answer, 1),
+                  }))}
+                  className={`flex-1 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${form.choiceCount === 2 ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  ✌️ ใช่ / ไม่ใช่
+                </button>
+              </div>
               <label className="block text-xs font-bold text-slate-700 mb-2">✅ ตัวเลือก (เลือกวงกลมหน้าข้อที่เป็นคำตอบที่ถูกต้อง)</label>
               <div className="space-y-2">
-                {[0, 1, 2, 3].map((c) => (
+                {[0, 1, 2, 3].slice(0, form.choiceCount).map((c) => (
                   <div key={c} className="flex items-center gap-2">
                     <input
                       type="radio"
