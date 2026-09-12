@@ -376,6 +376,20 @@ export function useWorksheetSubmissions() {
   const gradeSubmission = useCallback(async (id: number, updates: Partial<WorksheetSubmission>) => {
     setSubmissions(prev => prev.map(s => (s.id === id ? { ...s, ...updates } : s)));
     await submissionApi.update(id, updates);
+    // บันทึกผลตรวจลงสมุดจด (append-only, sync ขึ้นคลาวด์) — แม้อุปกรณ์อื่นจะ
+    // อัปโหลดสำเนาเก่าทับคำตอบก็ตาม ผลตรวจในสมุดจดจะถูกกู้คืนให้อัตโนมัติ
+    try {
+      const raw = localStorage.getItem(KEYS_WS_SUBMISSIONS);
+      const subs: WorksheetSubmission[] = raw ? JSON.parse(raw) : [];
+      const hit = subs.find(s => s.id === id);
+      if (hit && updates.status === 'graded') {
+        const jRaw = localStorage.getItem('scitech_grades_journal');
+        const journal: WorksheetSubmission[] = jRaw ? JSON.parse(jRaw) : [];
+        const idx = journal.findIndex(s => s.worksheet_id === hit.worksheet_id && s.student_id === hit.student_id);
+        if (idx >= 0) journal[idx] = hit; else journal.push(hit);
+        localStorage.setItem('scitech_grades_journal', JSON.stringify(journal));
+      }
+    } catch { /* ไม่บล็อกการให้คะแนน */ }
   }, []);
 
   return { submissions, submitWorksheet, gradeSubmission };

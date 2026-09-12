@@ -34,6 +34,7 @@ export const SYNCED_KEYS: string[] = [
   'scitech_lesson_sessions',
   'scitech_worksheets',
   'scitech_worksheet_submissions',
+  'scitech_grades_journal',
   'scitech_announcements',
   'scitech_calendar',
   'scitech_attendance_sessions',
@@ -72,6 +73,8 @@ export function getClient(): SupabaseClient | null {
 
 type QueueEntry = { value: string; updatedAt: string };
 const dirty = new Map<string, QueueEntry>();
+/** ค่าล่าสุดที่เรารู้จักต่อคีย์ — ใช้ข้ามการอัปโหลดซ้ำของลูปเขียนจาก polling */
+const lastKnown = new Map<string, string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlush() {
@@ -92,15 +95,51 @@ async function flush(): Promise<void> {
   // สำเนาท้องถิ่นเสมอ — อุปกรณ์ที่ถือสำเนาเก่า/รหัสผ่านว่าง จะไม่มีวันลบรหัสผ่าน
   // ของผู้ใช้บนคลาวด์ (สาเหตุของปัญหา "ล็อกอินไม่ได้" ที่เคยเกิดซ้ำ)
   let rows = batch.map(([id, e]) => ({ id, value: e.value, updated_at: e.updatedAt }));
-  const usersEntry = batch.find(([id]) => id === USER_REGISTER_KEY);
-  if (usersEntry) {
-    const merged = await mergeUserPasswordsWithCloud(supabase, usersEntry[1].value);
+
+  // กันข้อมูลสูญหาย: ก่อนอัปโหลดคำตอบ/ใบงานที่นักเรียนส่ง ต้องรวมกับคลาวด์ก่อน —
+  // อุปกรณ์ที่ถือสำเนาเก่า (เช่น แท็บที่ยังรัน bundle เก่าและ poll ทุก 5 วิ)
+  // จะไม่มีวันลบคะแนนที่ครูตรวจแล้ว หรือใบงานที่นักเรียนเพิ่งส่ง
+  const subsEntry = batch.find(([id]) => id === SUBMISSIONS_KEY);
+  if (subsEntry) {
+    const merged = await mergeSubmissionsWithCloud(supabase, subsEntry[1].value);
     if (merged.changed) {
       try {
-        localStorage.setItem(USER_REGISTER_KEY, merged.value);
+        localStorage.setItem(SUBMISSIONS_KEY, merged.value);
+        localStorage.setItem(metaKey(SUBMISSIONS_KEY), String(Date.now()));
+      } catch { /* ไม่บล็อกการอัปโหลด */ }
+      rows = rows.map(r => (r.id === SUBMISSIONS_KEY ? { ...r, value: merged.value } : r));
+    }
+  }
+
+  // สมุดจดผลตรวจ: รวมกับคลาวด์ (เฉพาะแถวตรวจแล้ว, เพิ่มได้ ลบไม่ได้) ก่อนอัปโหลด —
+  // สมุดจดคือข้อมูลสำรองสุดท้ายที่ใช้กู้คะแนน ถ้าอุปกรณ์เก่าอัปโหลดทับคำตอบ
+  const journalEntry = batch.find(([id]) => id === JOURNAL_KEY);
+  if (journalEntry) {
+    const healed = await mergeSubmissionsWithCloud(supabase, journalEntry[1].value, JOURNAL_MERGE);
+    if (healed.changed) {
+      try { localStorage.setItem(JOURNAL_KEY, healed.value); } catch { /* ignore */ }
+      rows = rows.map(r => (r.id === JOURNAL_KEY ? { ...r, value: healed.value } : r));
+    }
+  }
+
+  // กันข้อมูลสูญหาย: ก่อนอัปโหลดทะเบียนผู้ใช้ ต้องรวมรหัสผ่านจากคลาวด์กลับเข้า
+  // สำเนาท้องถิ่นเสมอ — อุปกรณ์ที่ถือสำเนาเก่า/รหัสผ่านว่าง จะไม่มีวันลบรหัสผ่าน
+  // ของผู้ใช้บนคลาวด์ (สาเหตุของปัญหา "ล็อกอินไม่ได้" ที่เคยเกิดซ้ำ)
+  const usersEntry = batch.find(([id]) => id === USER_REGISTER_KEY);
+  if (usersEntry) {
+    // (1) normalize: เติมฟิลด์ที่จำเป็นให้ครบ (is_active/class_name/grade_level)
+    //     เดิมทะเบียนที่ถูกเขียนโดยไม่ครบฟิลด์ (ค่า null) ทำให้หน้าครูกรองนักเรียนไม่เจอ
+    //     → ตรวจใบงานไม่ได้ แม้นักเรียนส่งงานแล้ว
+    let localValue = normalizeUserRegister(usersEntry[1].value);
+    // (2) merge: รหัสผ่านจากคลาวด์ห้ามหาย — เติมกลับก่อนอัปโหลดเสมอ
+    const merged = await mergeUserPasswordsWithCloud(supabase, localValue);
+    if (merged.changed) localValue = merged.value;
+    if (localValue !== usersEntry[1].value) {
+      try {
+        localStorage.setItem(USER_REGISTER_KEY, localValue);
         localStorage.setItem(metaKey(USER_REGISTER_KEY), String(Date.now()));
       } catch { /* ไม่บล็อกการอัปโหลด */ }
-      rows = rows.map(r => (r.id === USER_REGISTER_KEY ? { ...r, value: merged.value } : r));
+      rows = rows.map(r => (r.id === USER_REGISTER_KEY ? { ...r, value: localValue } : r));
     }
   }
 
@@ -144,25 +183,54 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
       errors.push(error.message);
       return { synced, errors };
     }
-    for (const row of data ?? []) {
+    const rows = (data ?? []).filter(r => SYNCED_KEYS.includes(r.id));
+
+    /* --- รอบ 1: กู้ผลตรวจจากสมุดจด (ก่อนพิจารณา timestamp ใด ๆ) ---
+       อุปกรณ์ที่รัน bundle เก่ายังอัปโหลดทับคำตอบด้วยสำเนาเก่าได้ (blind write-through)
+       สมุดจด (append-only) คือข้อมูลสำรองที่มันไม่แตะ — ผลตรวจที่หายจะถูกเติมกลับ
+       เข้าทั้งสำเนาคลาวด์และสำเนาเครื่องก่อนที่รอบ 2 จะเทียบ timestamp */
+    const journalRow = rows.find(r => r.id === JOURNAL_KEY);
+    const subsRow = rows.find(r => r.id === SUBMISSIONS_KEY);
+    if (journalRow && subsRow) {
+      const restored = restoreGradesFromJournal(subsRow, journalRow);
+      if (restored.changedSubs) {
+        subsRow.value = restored.subsValue;
+        subsRow.updated_at = new Date().toISOString();
+      }
+      if (restored.changedJournal) journalRow.value = restored.journalValue;
+    }
+
+    for (const row of rows) {
       if (!SYNCED_KEYS.includes(row.id)) continue;
       const local = localStorage.getItem(row.id);
       const localMeta = localStorage.getItem(metaKey(row.id));
       const cloudAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
       const localAt = localMeta ? Number(localMeta) : 0;
       if (!local || cloudAt > localAt) {
-        localStorage.setItem(row.id, typeof row.value === 'string' ? row.value : JSON.stringify(row.value));
+        // ทะเบียนผู้ใช้: normalize ทุกครั้งที่ดึงจากคลาวด์ — เติมฟิลด์ที่หาย (is_active/class_name/grade_level)
+        const raw = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+        const value = row.id === USER_REGISTER_KEY ? normalizeUserRegister(raw) : raw;
+        localStorage.setItem(row.id, value);
         localStorage.setItem(metaKey(row.id), String(cloudAt || Date.now()));
+        lastKnown.set(row.id, value); // ค่านี้ตรงกับคลาวด์แล้ว — ไม่ต้องอัปโหลดซ้ำ
+        if (value !== raw) mirrorWrite(row.id); // ส่งเวอร์ชันที่เติมครบกลับขึ้นคลาวด์
         synced++;
-      } else if (row.id === USER_REGISTER_KEY) {
+      } else {
+        lastKnown.set(row.id, local); // สำเนาเครื่องใหม่กว่า — จำไว้ ไม่ให้ polling ยัดซ้ำ
+        if (row.id === USER_REGISTER_KEY) {
         // ทะเบียนผู้ใช้: แม้สำเนาเครื่องจะ "ใหม่กว่า" ก็ต้องดูดรหัสผ่านจากคลาวด์
         // กลับเข้ามาเสมอ — กันอุปกรณ์ที่ถือสำเนารหัสผ่านว่าง (เคยเกิดปัญหาล็อกอินไม่ได้)
-        const merged = mergePasswords(local, row.value);
-        if (merged !== local) {
+        let merged = mergePasswords(local, row.value);
+        // และ normalize ฟิลด์ที่จำเป็นด้วย — กันทะเบียนที่ไม่ครบฟิลด์วนกลับมาใหม่
+        const norm = normalizeUserRegister(merged);
+        if (norm !== local) {
+          merged = norm;
           localStorage.setItem(row.id, merged);
           localStorage.setItem(metaKey(row.id), String(Date.now()));
+          lastKnown.set(row.id, merged);
           mirrorWrite(row.id);
           synced++;
+        }
         }
       }
     }
@@ -197,6 +265,38 @@ function mergePasswords(localRaw: string, cloudRaw: unknown): string {
 const metaKey = (id: string) => `__synced_at__${id}`;
 
 const USER_REGISTER_KEY = 'scitech_users';
+const SUBMISSIONS_KEY = 'scitech_worksheet_submissions';
+/** สมุดจดผลการตรวจ (append-only) — กันคะแนนหายแม้ถูกอุปกรณ์เก่าทับ */
+const JOURNAL_KEY = 'scitech_grades_journal';
+/** โหมดรวมสำหรับสมุดจด: คะแนนที่ตรวจแล้วเพิ่มได้เรื่อย ๆ ห้ามถูกถอดออก */
+const JOURNAL_MERGE = true;
+
+/**
+ * เติมฟิลด์ที่จำเป็นของทะเบียนผู้ใช้ให้ครบก่อนบันทึก/อัปโหลด:
+ *  • is_active ห้ามเป็น null/undefined (แปลว่า "ปิดใช้งาน" ในทุกฟิลเตอร์ของหน้าครู)
+ *  • นักเรียนต้องมี grade_level และ class_name — ไม่งั้นหน้าตรวจใบงาน/เช็คชื่อหาเด็กไม่เจอ
+ */
+export function normalizeUserRegister(raw: string): string {
+  try {
+    const users = JSON.parse(raw) as Array<Record<string, unknown>>;
+    if (!Array.isArray(users)) return raw;
+    let changed = false;
+    const fixed = users.map(u => {
+      const nu = { ...u };
+      if (nu.is_active !== false && nu.is_active !== true) { nu.is_active = true; changed = true; }
+      const role = String(nu.role ?? '');
+      if (role === 'student') {
+        const grade = Number(nu.grade_level);
+        if (!Number.isFinite(grade) || grade < 1 || grade > 6) { nu.grade_level = 1; changed = true; }
+        if (!String(nu.class_name ?? '').trim()) { nu.class_name = `${nu.grade_level || 1}/1`; changed = true; }
+      }
+      return changed ? nu : u;
+    });
+    return changed ? JSON.stringify(fixed) : raw;
+  } catch {
+    return raw;
+  }
+}
 
 /** รวมรหัสผ่านจากคลาวด์เข้าสำเนาท้องถิ่นก่อนอัปโหลด — รหัสผ่านจะหายไม่ได้
  *  (อุปกรณ์ใดก็ตามที่สำเนาล้าสมัย/รหัสผ่านว่าง จะได้รับรหัสผ่านจากคลาวด์คืนโดยอัตโนมัติ) */
@@ -231,14 +331,154 @@ async function mergeUserPasswordsWithCloud(
   }
 }
 
-/** เรียกหลังแอปเขียน localStorage ที่อยู่ใน SYNCED_KEYS — อัปโหลดตามหลัง */
-export function mirrorWrite(key: string): void {
+/**
+ * กู้ผลตรวจจากสมุดจดกลับเข้ารายการคำตอบ (เรียกก่อนเทียบ timestamp ใน hydrate):
+ *  • ทุกแถวตรวจแล้วในสมุดจดที่คำตอบปัจจุบันยังไม่มี (หรือยังไม่ตรวจ) → เติมกลับ
+ *  • ผลตรวจใหม่ในคำตอบที่สมุดจดยังไม่มี → เขียนลงสมุดจดด้วย (สมุดจดโตได้เรื่อย ๆ)
+ */
+function restoreGradesFromJournal(
+  subsRow: { value: unknown; updated_at: string | null },
+  journalRow: { value: unknown },
+): { subsValue: string; journalValue: string; changedSubs: boolean; changedJournal: boolean } {
+  const subsValue = typeof subsRow.value === 'string' ? subsRow.value : JSON.stringify(subsRow.value);
+  const journalValue = typeof journalRow.value === 'string' ? journalRow.value : JSON.stringify(journalRow.value);
+  const out = { subsValue, journalValue, changedSubs: false, changedJournal: false };
+  try {
+    const parse = (v: unknown): Array<Record<string, unknown>> =>
+      typeof v === 'string' ? JSON.parse(v) : (v as Array<Record<string, unknown>>);
+    const subs = parse(subsValue);
+    let journal = parse(journalValue);
+    if (!Array.isArray(subs)) return out;
+    if (!Array.isArray(journal)) journal = [];
+    const keyOf = (s: Record<string, unknown>) => `${s.worksheet_id}:${s.student_id}`;
+    const journalBy = new Map(journal.map(s => [keyOf(s), s]));
+
+    // (a) ผลตรวจใหม่จากคำตอบปัจจุบัน → เพิ่มเข้าสมุดจด
+    for (const s of subs) {
+      if (s.status !== 'graded') continue;
+      const j = journalBy.get(keyOf(s));
+      const at = String(s.graded_at ?? '');
+      if (!j || String(j.graded_at ?? '') < at) {
+        if (j) { journal = journal.map(x => (keyOf(x) === keyOf(s) ? s : x)); }
+        else { journal.push(s); journalBy.set(keyOf(s), s); }
+        out.changedJournal = true;
+      }
+    }
+
+    // (b) ผลตรวจจากสมุดจดที่คำตอบปัจจุบันขาดหาย/ถูกถอด → เติมกลับ
+    const subsBy = new Map(subs.map(s => [keyOf(s), s]));
+    for (const j of journal) {
+      const s = subsBy.get(keyOf(j));
+      if (!s || s.status !== 'graded') {
+        const at = String(j.graded_at ?? '');
+        // แถวคำตอบปัจจุบันยังไม่ตรวจ แต่สมุดจดบอกว่าเคยตรวจ — ถ้าสมุดใหม่กว่าที่คำตอบส่ง
+        const curAt = s ? String(s.submitted_at ?? '') : '';
+        // เทียบไม่ได้ตรง ๆ (รูปแบบไทย/ISO) — ใช้กฎ: สมุดจดชนะเมื่อคำตอบปัจจุบันยังไม่ตรวจ
+        void curAt; void at;
+        if (s) {
+          out.subsValue = JSON.stringify(subs.map(x => (keyOf(x) === keyOf(j) ? j : x)));
+        } else {
+          out.subsValue = JSON.stringify([...(parse(out.subsValue)), j]);
+        }
+        out.changedSubs = true;
+        subsBy.set(keyOf(j), j);
+      } else if (String(j.graded_at ?? '') > String(s.graded_at ?? '')) {
+        // สมุดจดมีผลตรวจใหม่กว่า (ครูตรวจซ้ำจากเครื่องอื่น)
+        out.subsValue = JSON.stringify(subsBy.size ? JSON.parse(out.subsValue).map((x: Record<string, unknown>) => (keyOf(x) === keyOf(j) ? j : x)) : [j]);
+        out.changedSubs = true;
+        subsBy.set(keyOf(j), j);
+      }
+    }
+  } catch { /* ข้อมูลพัง — คืนค่าเดิม */ }
+  return out;
+}
+
+/**
+ * รวมคำตอบใบงานที่นักเรียนส่ง (คลาวด์ + ท้องถิ่น) ก่อนอัปโหลด — ห้ามข้อมูลหาย:
+ *  • แถวที่มีเฉพาะในคลาวด์ (นักเรียนคนอื่นส่งจากเครื่องอื่น / ครูตรวจแล้ว) → เก็บไว้
+ *  • แถวซ้ำ: เวอร์ชันที่ "ตรวจแล้ว" ชนะเสมอ; ถ้ายังไม่ตรวจ เอาเวอร์ชันที่ส่งล่าสุด
+ * คืน JSON ใหม่ถ้ามีการรวม, คืนค่าเดิมถ้าไม่ต่าง
+ */
+async function mergeSubmissionsWithCloud(
+  supabase: SupabaseClient,
+  localValue: string,
+  journalMode = false,
+): Promise<{ value: string; changed: boolean }> {
+  try {
+    const { data, error } = await supabase
+      .from('app_state')
+      .select('value')
+      .eq('id', SUBMISSIONS_KEY)
+      .maybeSingle();
+    if (error || !data?.value) return { value: localValue, changed: false };
+    const parse = (v: unknown): Array<Record<string, unknown>> =>
+      typeof v === 'string' ? JSON.parse(v) : (v as Array<Record<string, unknown>>);
+    const localSubs = parse(localValue);
+    const cloudSubs = parse(data.value);
+    if (!Array.isArray(localSubs) || !Array.isArray(cloudSubs)) return { value: localValue, changed: false };
+
+    const keyOf = (s: Record<string, unknown>) => `${s.worksheet_id}:${s.student_id}`;
+    const localBy = new Map(localSubs.map(s => [keyOf(s), s]));
+    const merged: Array<Record<string, unknown>> = [];
+    let changed = false;
+
+    for (const cloud of cloudSubs) {
+      const local = localBy.get(keyOf(cloud));
+      if (!local) {
+        // มีเฉพาะในคลาวด์ (นักเรียนส่งจากเครื่องอื่น / ครูตรวจจากเครื่องอื่น) — เก็บ
+        merged.push(cloud);
+        changed = true;
+        continue;
+      }
+      const cloudGraded = cloud.status === 'graded';
+      const localGraded = local.status === 'graded';
+      if (journalMode) {
+        // สมุดจด: เก็บเฉพาะผลตรวจ — เวอร์ชันที่ตรวจล่าสุด (graded_at ใหม่กว่า) ชนะ,
+        // และผลตรวจที่มีอยู่ห้ามถอดออก (ถ้าเครื่องใดส่งเวอร์ชันไม่ตรวจมา ให้คงผลเดิม)
+        const cAt = String(cloud.graded_at ?? '');
+        const lAt = String(local.graded_at ?? '');
+        if (cloudGraded && localGraded) merged.push(cAt >= lAt ? cloud : local);
+        else if (cloudGraded) { merged.push(cloud); changed = true; }
+        else if (localGraded) merged.push(local); // ผลตรวจของเครื่องนี้ — คงไว้ (ห้ามแทนด้วยแถวไม่ตรวจ)
+        // ทั้งคู่ไม่ตรวจ → ไม่ใส่สมุดจด (สมุดจดเก็บเฉพาะผลตรวจ)
+      } else if (cloudGraded && !localGraded) {
+        merged.push(cloud); // ครูตรวจแล้วบนคลาวด์ — ชนะเสมอ
+        changed = true;
+      } else if (localGraded && !cloudGraded) {
+        merged.push(local); // เครื่องนี้ตรวจแล้ว — อัปโหลดเวอร์ชันตรวจแล้ว
+      } else {
+        // ไม่มีใครตรวจ — เอาเวอร์ชันที่ส่งล่าสุด (submitted_at แบบ ISO เทียบได้, แบบไทยถือว่าเท่ากัน)
+        const cAt = String(cloud.submitted_at ?? '');
+        const lAt = String(local.submitted_at ?? '');
+        merged.push(cAt > lAt ? cloud : local);
+        if (cAt > lAt) changed = true;
+      }
+    }
+    // แถวที่มีเฉพาะในเครื่อง (นักเรียนเพิ่งส่งจากเครื่องนี้) — เก็บไว้อัปโหลด
+    // (สมุดจด: เก็บเฉพาะแถวที่ตรวจแล้วเท่านั้น)
+    for (const local of localSubs) {
+      if (cloudSubs.some(c => keyOf(c) === keyOf(local))) continue;
+      if (journalMode && local.status !== 'graded') continue;
+      merged.push(local);
+    }
+    return changed ? { value: JSON.stringify(merged), changed: true } : { value: localValue, changed: false };
+  } catch {
+    return { value: localValue, changed: false };
+  }
+}
+
+/** เรียกหลังแอปเขียน localStorage ที่อยู่ใน SYNCED_KEYS — อัปโหลดตามหลัง (ข้ามถ้าข้อมูลไม่เปลี่ยน) */
+export function mirrorWrite(key: string, value?: string): void {
   if (!SYNCED_KEYS.includes(key)) return;
-  const value = localStorage.getItem(key);
-  if (value === null) return;
+  const val = value !== undefined ? value : localStorage.getItem(key);
+  if (val === null) return;
+  // ข้ามถ้าค่าเหมือนค่าล่าสุดที่เรารู้จัก — ลูปเขียนซ้ำจาก polling จะไม่ปลุกการอัปโหลด
+  // (กันอุปกรณ์สองเครื่องแย่งเขียนทับกัน: เครื่องที่ไม่ได้แก้จริงจะไม่มีวันชนะ timestamp)
+  if (lastKnown.get(key) === val) return;
+  lastKnown.set(key, val);
   const now = new Date().toISOString();
   localStorage.setItem(metaKey(key), String(Date.now()));
-  dirty.set(key, { value, updatedAt: now });
+  dirty.set(key, { value: val, updatedAt: now });
   scheduleFlush();
 }
 
@@ -250,7 +490,7 @@ export function installWriteInterceptor(): void {
   const original = proto.setItem;
   proto.setItem = function (this: Storage, k: string, v: string) {
     original.call(this, k, v);
-    mirrorWrite(k);
+    mirrorWrite(k, v);
   };
   (proto as unknown as { __mirrored?: boolean }).__mirrored = true;
 }

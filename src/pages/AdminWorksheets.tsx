@@ -10,6 +10,21 @@ import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const SUBJECTS = ['วิทยาศาสตร์', 'คณิตศาสตร์', 'ภาษาไทย', 'ภาษาอังกฤษ', 'สังคมศึกษา'];
 const CHOICE_LABELS = ['ก', 'ข', 'ค', 'ง'];
+/** ป้ายห้องสำหรับนักเรียนที่ทะเบียนไม่ได้ระบุห้องเรียน */
+const NO_ROOM_LABEL = 'ไม่ระบุห้อง';
+
+/**
+ * แสดงเวลาที่นักเรียนส่งงาน — submitted_at อาจเป็น ISO หรือข้อความไทย
+ * จากหน้านักเรียน (เช่น "12/09/2569 19:44") ซึ่ง new Date() อ่านไม่ได้
+ * (ผลลัพธ์ของ toLocaleString('th-TH') พร้อมเวลา = พ.ศ. อยู่แล้ว)
+ */
+function formatSubmittedAt(v?: string | null): string {
+  if (!v) return '-';
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
+    try { return new Date(v).toLocaleString('th-TH'); } catch { return v; }
+  }
+  return v; // รูปแบบไทยจากหน้านักเรียน — แสดงตามที่ส่งมา
+}
 
 const emptyQuestion = (id: number): WorksheetQuestion => ({
   id,
@@ -1001,13 +1016,16 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
   // ---- Students for selected grade ----
   const studentsForGrade = useMemo(() => {
     if (filterGrade === '') return [];
-    return users.filter(u => u.role === 'student' && u.grade_level === filterGrade && u.is_active);
+    // is_active !== false (ไม่ใช่ u.is_active) — ทะเบียนเก่าที่ไม่มีฟิลด์ is_active ต้องไม่ถูกตัดหาย
+    return users.filter(u => u.role === 'student' && u.grade_level === filterGrade && u.is_active !== false);
   }, [users, filterGrade]);
 
   // ---- Rooms (class_names) ----
+  // นักเรียนที่ยังไม่ได้ระบุห้อง (class_name ว่าง) จัดเป็นห้อง "ไม่ระบุห้อง"
+  // เพื่อให้ครูยังเห็นและตรวจงานของเด็กคนนั้นได้ ไม่หลุดจากรายชื่อ
   const rooms = useMemo(() => {
     const roomSet = new Set<string>();
-    studentsForGrade.forEach(s => { if (s.class_name) roomSet.add(s.class_name); });
+    studentsForGrade.forEach(s => { roomSet.add(s.class_name?.trim() || NO_ROOM_LABEL); });
     return Array.from(roomSet).sort();
   }, [studentsForGrade]);
 
@@ -1021,7 +1039,7 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
   // ---- Student rows with submission status ----
   const studentRows: StudentRow[] = useMemo(() => {
     if (!selectedWs) return [];
-    const roomStudents = studentsForGrade.filter(s => s.class_name === currentRoom);
+    const roomStudents = studentsForGrade.filter(s => (s.class_name?.trim() || NO_ROOM_LABEL) === currentRoom);
     return roomStudents.map(s => {
       const sub = submissions.find(
         sub => sub.worksheet_id === selectedWs.id && sub.student_id === s.id
@@ -1128,7 +1146,7 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
 
     published.forEach(ws => {
       // Get all students for this worksheet's grade
-      const wsStudents = users.filter(u => u.role === 'student' && u.grade_level === ws.grade_level && u.is_active);
+      const wsStudents = users.filter(u => u.role === 'student' && u.grade_level === ws.grade_level && u.is_active !== false);
       const wsSubmissions = submissions.filter(s => s.worksheet_id === ws.id);
       const gradedSubs = wsSubmissions.filter(s => s.status === 'graded');
       const pendingSubs = wsSubmissions.filter(s => s.status !== 'graded');
@@ -1344,7 +1362,7 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
           {rooms.length > 0 && (
             <div className="flex gap-2 overflow-x-auto pb-1 mb-4 scrollbar-thin">
               {rooms.map(room => {
-                const count = studentsForGrade.filter(s => s.class_name === room).length;
+                const count = studentsForGrade.filter(s => (s.class_name?.trim() || NO_ROOM_LABEL) === room).length;
                 return (
                   <button
                     key={room}
@@ -1428,9 +1446,9 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
                         <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${statusConfig.cls}`}>
                           {statusConfig.label}
                         </span>
-                        {sr.submission?.submitted_at && (
-                          <span className="text-[11px] text-slate-400">· ส่งเมื่อ {new Date(sr.submission.submitted_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</span>
-                        )}
+                    {sr.submission?.submitted_at && (
+                      <span className="text-[11px] text-slate-400">· ส่งเมื่อ {formatSubmittedAt(sr.submission.submitted_at)}</span>
+                    )}
                       </div>
                     </div>
                     {/* Score */}
@@ -1482,7 +1500,7 @@ function GradeTab({ initialWorksheet }: { initialWorksheet?: Worksheet | null })
                   {users.find(u => u.id === gradingSub.student_id)?.full_name || 'นักเรียน'}
                 </div>
                 <div className="text-xs opacity-85">
-                  ส่งเมื่อ {gradingSub.submitted_at ? new Date(gradingSub.submitted_at).toLocaleString('th-TH') : '-'}
+                  ส่งเมื่อ {formatSubmittedAt(gradingSub.submitted_at)}
                 </div>
               </div>
               <button onClick={() => { setGradingSub(null); setGradingWs(null); }}
