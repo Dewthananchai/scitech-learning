@@ -154,12 +154,44 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
         localStorage.setItem(row.id, typeof row.value === 'string' ? row.value : JSON.stringify(row.value));
         localStorage.setItem(metaKey(row.id), String(cloudAt || Date.now()));
         synced++;
+      } else if (row.id === USER_REGISTER_KEY) {
+        // ทะเบียนผู้ใช้: แม้สำเนาเครื่องจะ "ใหม่กว่า" ก็ต้องดูดรหัสผ่านจากคลาวด์
+        // กลับเข้ามาเสมอ — กันอุปกรณ์ที่ถือสำเนารหัสผ่านว่าง (เคยเกิดปัญหาล็อกอินไม่ได้)
+        const merged = mergePasswords(local, row.value);
+        if (merged !== local) {
+          localStorage.setItem(row.id, merged);
+          localStorage.setItem(metaKey(row.id), String(Date.now()));
+          mirrorWrite(row.id);
+          synced++;
+        }
       }
     }
   } catch (e) {
     errors.push(String(e));
   }
   return { synced, errors };
+}
+
+/** รวมรหัสผ่านจากคลาวด์ (cloudRaw) เข้าสำเนาท้องถิ่น (localRaw) — คืน JSON ใหม่ถ้ามีการเติมรหัสผ่านที่หายไป */
+function mergePasswords(localRaw: string, cloudRaw: unknown): string {
+  try {
+    const parse = (v: unknown): Array<Record<string, unknown>> =>
+      typeof v === 'string' ? JSON.parse(v) : (v as Array<Record<string, unknown>>);
+    const localUsers = parse(localRaw);
+    const cloudUsers = parse(cloudRaw);
+    const keyOf = (u: Record<string, unknown>) => String(u.username ?? '').toLowerCase().trim();
+    const cloudBy = new Map(cloudUsers.map(u => [keyOf(u), u]));
+    let changed = false;
+    const merged = localUsers.map(u => {
+      const pw = String((u.password as string | undefined) ?? '').trim();
+      const cloudPw = String((cloudBy.get(keyOf(u))?.password as string | undefined) ?? '').trim();
+      if (!pw && cloudPw) { changed = true; return { ...u, password: cloudPw }; }
+      return u;
+    });
+    return changed ? JSON.stringify(merged) : localRaw;
+  } catch {
+    return localRaw;
+  }
 }
 
 const metaKey = (id: string) => `__synced_at__${id}`;
