@@ -269,6 +269,18 @@ export default function StudentM1PracticeSelect() {
   return (
     <div className="st-page min-h-screen">
       <style>{STUDENT_THEME_CSS}</style>
+      {/* ใช้ฟอนต์ปกติ (ระบบ) — ไม่ใช้ Noto Sans Thai Looped แบบหน้านักเรียนหลัก */}
+      <style>{`
+        .st-page, .st-page h1, .st-page h2, .st-page h3, .st-page p,
+        .st-page span, .st-page label, .st-page button, .st-page select,
+        .st-page input, .st-page textarea, .st-page a, .st-page div {
+          font-family: 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        }
+        /* ยกเว้นสูตรคณิตศาสตร์ (KaTeX ต้องใช้ฟอนต์ของตัวเอง) */
+        .st-page .katex, .st-page .katex * {
+          font-family: KaTeX_Main, 'Times New Roman', serif !important;
+        }
+      `}</style>
       <MobileHeader title="ตะลุยโจทย์ เข้า ม.1" />
       <StudentSidebar />
 
