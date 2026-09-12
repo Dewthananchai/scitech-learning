@@ -274,7 +274,7 @@ export default function StudentM1PracticeSelect() {
         .st-page, .st-page h1, .st-page h2, .st-page h3, .st-page p,
         .st-page span, .st-page label, .st-page button, .st-page select,
         .st-page input, .st-page textarea, .st-page a, .st-page div {
-          font-family: 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+          font-family: 'Sarabun', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         }
         /* ยกเว้นสูตรคณิตศาสตร์ (KaTeX ต้องใช้ฟอนต์ของตัวเอง) */
         .st-page .katex, .st-page .katex * {
