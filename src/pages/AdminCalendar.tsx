@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useCalendarEvents } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 import type { CalendarEvent } from '../types';
@@ -99,8 +100,9 @@ export default function AdminCalendar() {
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
       <TeacherMobileHeader title="จัดการปฏิทิน" />
+        <TeacherBottomNav />
       
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
         <div className="rounded-3xl shadow-xl shadow-teal-900/5 border border-teal-100 overflow-hidden bg-white">
           {/* Cyan/Teal Gradient Topbar */}

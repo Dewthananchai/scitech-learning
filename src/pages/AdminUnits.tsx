@@ -3,6 +3,7 @@ import { useAppStore } from '../store/AppContext';
 import { GRADES } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 type ViewMode = 'grid' | 'list';
@@ -102,10 +103,11 @@ export default function AdminUnits() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <TeacherMobileHeader title="หน่วยการเรียนรู้" />
+        <TeacherBottomNav />
       <AdminSidebar />
 
       {/* Main Content */}
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
         <div className="rounded-3xl shadow-xl shadow-purple-900/5 border border-purple-100 overflow-hidden bg-white">
           {/* Violet Gradient Topbar */}

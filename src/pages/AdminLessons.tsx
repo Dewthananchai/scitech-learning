@@ -5,6 +5,7 @@ import { GRADES } from '../types';
 import type { Lesson } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 function getYouTubeId(url: string): string | null {
@@ -126,10 +127,11 @@ export default function AdminLessons() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <TeacherMobileHeader title="คลังบทเรียน" />
+        <TeacherBottomNav />
       <AdminSidebar />
 
       {/* Main Content */}
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-6xl transition-all">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-6xl transition-all">
         {/* Main Card with Emerald Topbar */}
         <div className="bg-white rounded-3xl shadow-xl shadow-emerald-900/5 border border-emerald-100 overflow-hidden mb-8">
           {/* Emerald Topbar */}

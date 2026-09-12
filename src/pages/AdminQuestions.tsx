@@ -4,6 +4,7 @@ import { GRADES, ONET_SUBJECTS, M1_SUBJECTS } from '../types';
 import type { Question, SubjectUnit } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import { M1BankContent } from './AdminQuestionsM1';
 import { getM1BankCount } from '../data/m1BankData';
 import { AdminQuestionsONetBank } from './AdminQuestionsONet';
@@ -396,8 +397,9 @@ export default function AdminQuestions() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <TeacherMobileHeader title="คลังข้อสอบ" />
+        <TeacherBottomNav />
       <AdminSidebar />
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
         <div className="rounded-3xl shadow-xl shadow-amber-900/5 border border-amber-100 overflow-hidden bg-white">
           {/* Amber Gradient Topbar */}

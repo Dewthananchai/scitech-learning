@@ -7,6 +7,7 @@ import { getM1BankCount } from '../data/m1BankData';
 import { getOnetBankCount } from '../data/onetBankData';
 import AdminSidebar from '../components/AdminSidebar';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 export default function AdminDashboard() {
@@ -87,10 +88,11 @@ export default function AdminDashboard() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <TeacherMobileHeader title="แดชบอร์ดครูผู้สอน" />
+        <TeacherBottomNav />
       <AdminSidebar />
 
       {/* Main Content Area */}
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-6xl transition-all">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-6xl transition-all">
         {/* ============================================================
             1. HERO WELCOME BANNER (Teacher Station)
             ============================================================ */}

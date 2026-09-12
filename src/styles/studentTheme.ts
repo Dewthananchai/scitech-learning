@@ -174,4 +174,9 @@ export const TEACHER_THEME_CSS = `
   border-color: #10b981;
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
 }
+
+/* Safe-area padding for the teacher mobile bottom nav (reuse student rule) */
+.safe-area-bottom {
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
+}
 `;

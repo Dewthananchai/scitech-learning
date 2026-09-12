@@ -7,6 +7,7 @@ import { useLessonProgress } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import AdminSidebar from '../components/AdminSidebar';
 import { asset } from '../lib/asset';
 import { adminCreateAuthUser, setAuthPassword } from '../lib/supabaseAuth';
@@ -262,8 +263,9 @@ export default function AdminUsers() {
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
       <TeacherMobileHeader title="จัดการผู้ใช้และการเข้าเรียน" />
+        <TeacherBottomNav />
 
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
         <div className="rounded-3xl shadow-xl shadow-emerald-900/5 border border-emerald-100 overflow-hidden bg-white">
           {/* Emerald/Teal Gradient Topbar */}

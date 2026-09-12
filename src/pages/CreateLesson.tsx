@@ -4,6 +4,7 @@ import { useAppStore } from '../store/AppContext';
 import type { Question, LessonMedia } from '../types';
 import AdminSidebar from '../components/AdminSidebar';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const steps = [
@@ -589,9 +590,10 @@ export default function CreateLesson() {
     <div className="teacher-page min-h-screen">
       <style>{TEACHER_THEME_CSS}</style>
       <TeacherMobileHeader title="สร้างบทเรียน" />
+        <TeacherBottomNav />
       <AdminSidebar />
 
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Back Link + Top Row */}
         <div className="flex items-center justify-between">
           <Link

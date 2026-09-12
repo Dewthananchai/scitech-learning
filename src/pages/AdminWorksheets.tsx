@@ -6,6 +6,7 @@ import { GRADES, Worksheet, WorksheetQuestion, WorksheetSubmission } from '../ty
 import type { AppUser } from '../store/useStore';
 import AdminSidebar from '../components/AdminSidebar';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 
 const SUBJECTS = ['วิทยาศาสตร์', 'คณิตศาสตร์', 'ภาษาไทย', 'ภาษาอังกฤษ', 'สังคมศึกษา'];
@@ -62,8 +63,9 @@ export default function AdminWorksheets({ defaultTab = 'create' }: { defaultTab?
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
       <TeacherMobileHeader title="จัดการใบงาน" />
+        <TeacherBottomNav />
 
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
         <div className="rounded-3xl shadow-xl shadow-green-900/5 border border-green-100 overflow-hidden bg-white">
           {/* Green Gradient Topbar */}

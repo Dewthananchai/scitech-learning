@@ -3,6 +3,7 @@ import { useAuth } from '../store/AuthContext';
 import { useMissions, useLessonProgress, useLessonSession, useAttendance } from '../store/useStore';
 import MobileHeader from '../components/MobileHeader';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import StudentSidebar from '../components/StudentSidebar';
 import AdminSidebar from '../components/AdminSidebar';
 import { STUDENT_THEME_CSS, TEACHER_THEME_CSS } from '../styles/studentTheme';
@@ -144,8 +145,10 @@ export default function ProfilePage() {
       {user.role === 'student'
         ? <MobileHeader title="โปรไฟล์ของฉัน" />
         : <TeacherMobileHeader title="โปรไฟล์ผู้สอน" />}
+      {user.role !== 'student' && <TeacherBottomNav />}
 
       <main className={`${user.role === 'student' ? 'md:ml-20 lg:ml-64' : 'md:ml-64'} pt-16 md:pt-16 lg:pt-4 pb-28 md:pb-12 px-3.5 md:px-6 transition-all`}>
+        {/* pb-28 รองรับแถบนำทางล่างทั้งของนักเรียนและครูบนมือถือ */}
         {/* Header */}
         {user.role === 'admin' ? (
           <div className="mb-6">

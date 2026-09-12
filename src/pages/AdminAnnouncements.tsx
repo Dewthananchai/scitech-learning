@@ -3,6 +3,7 @@ import { useAnnouncements } from '../store/useStore';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
+import TeacherBottomNav from '../components/TeacherBottomNav';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 import type { Announcement } from '../types';
@@ -78,8 +79,9 @@ export default function AdminAnnouncements() {
       <style>{TEACHER_THEME_CSS}</style>
       <AdminSidebar />
       <TeacherMobileHeader title="จัดการประกาศ" />
+        <TeacherBottomNav />
       
-      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 max-w-7xl mx-auto space-y-6">
+      <main className="md:ml-64 p-4 md:p-6 pt-16 md:pt-6 pb-24 md:pb-6 max-w-7xl mx-auto space-y-6">
         {/* Main Card */}
         <div className="rounded-3xl shadow-xl shadow-rose-900/5 border border-rose-100 overflow-hidden bg-white">
           {/* Rose Gradient Topbar */}
