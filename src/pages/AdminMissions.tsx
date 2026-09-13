@@ -7,9 +7,12 @@ import TeacherBottomNav from '../components/TeacherBottomNav';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 import {
-  getStarConditions,
-  setStarConditions,
+  getStarConditionsSettings,
+  setStarConditionsSettings,
   resetStarConditions,
+  resetStarAwards,
+  countAllStarAwards,
+  getStarPeriodInfo,
   starConditionsTotal,
   getStudentAwards,
   type StarCondition,
@@ -46,11 +49,18 @@ export default function AdminMissions() {
   const totalCompletions = completions.length;
 
   /* ── 🎯 เงื่อนไขการได้ดาว (แก้ไขได้ — ซิงก์คลาวด์ทุกอุปกรณ์) ── */
-  const [starRules, setStarRules] = useState<StarCondition[]>(() => getStarConditions());
+  const settings0 = getStarConditionsSettings();
+  const [starRules, setStarRules] = useState<StarCondition[]>(() => settings0.conditions);
+  const [periodStart, setPeriodStart] = useState<string>(() => settings0.period_start || '');
+  const [periodEnd, setPeriodEnd] = useState<string>(() => settings0.period_end || '');
   const [starSaved, setStarSaved] = useState(false);
   const [starEdited, setStarEdited] = useState(false);
   const updateStarRule = (key: StarCondition['key'], patch: Partial<StarCondition>) => {
     setStarRules(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)));
+    setStarEdited(true);
+    setStarSaved(false);
+  };
+  const markStarEdited = () => {
     setStarEdited(true);
     setStarSaved(false);
   };
@@ -60,19 +70,36 @@ export default function AdminMissions() {
       reward: Math.max(0, Math.min(100, Math.round(r.reward) || 0)),
       target: Math.max(1, Math.round(r.target) || 1),
     }));
-    setStarConditions(clean);
+    // กำหนดเวลา: ถ้ากรอกปลายทางโดยไม่ได้กรอกต้นทาง → ต้นทาง = วันนี้อัตโนมัติ
+    let start = periodStart || null;
+    const end = periodEnd || null;
+    if (!start && end) start = new Date().toISOString().slice(0, 10);
+    if (start && end && start > end) { alert('วันเริ่มต้องไม่หลังวันสิ้นสุด'); return; }
+    setStarConditionsSettings({ conditions: clean, period_start: start, period_end: end });
     setStarRules(clean);
+    setPeriodStart(start || '');
+    setPeriodEnd(end || '');
     setStarEdited(false);
     setStarSaved(true);
     setTimeout(() => setStarSaved(false), 2500);
   };
   const handleResetStarRules = () => {
-    if (!confirm('รีเซ็ตเงื่อนไขดาวกลับค่าเริ่มต้น (3 บท +3⭐ · 100% +5⭐ · 3 ใบงาน +10⭐)?')) return;
+    if (!confirm('รีเซ็ตเงื่อนไขและกำหนดเวลากลับค่าเริ่มต้น? (3 บท +3⭐ · 100% +5⭐ · 3 ใบงาน +10⭐ · สะสมตลอดเวลา)')) return;
     resetStarConditions();
-    setStarRules(getStarConditions());
+    const d = getStarConditionsSettings();
+    setStarRules(d.conditions);
+    setPeriodStart(d.period_start || '');
+    setPeriodEnd(d.period_end || '');
     setStarEdited(false);
     setStarSaved(false);
   };
+  const [awardsCount, setAwardsCount] = useState(() => countAllStarAwards());
+  const handleResetStarAwards = () => {
+    if (!confirm('รีเซ็ตดาวเงื่อนไขของนักเรียนทุกคนเป็น 0?\n(นักเรียนเริ่มสะสมใหม่ตั้งแต่ 0 — ดาวภารกิจรายวันไม่ถูกลบ)')) return;
+    resetStarAwards();
+    setAwardsCount(0);
+  };
+  const periodNow = getStarPeriodInfo();
   const starGoal = starRules.reduce((s, r) => s + r.reward, 0);
 
   const resetForm = () => {
@@ -224,6 +251,13 @@ export default function AdminMissions() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1.5 rounded-xl text-xs font-black border ${
+                    periodNow.open
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-slate-100 text-slate-500 border-slate-200'
+                  }`}>
+                    {periodNow.open ? '🟢' : '⛔'} {periodNow.statusText}
+                  </span>
                   <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-white text-amber-700 border border-amber-200">
                     รวมสูงสุด {starGoal} ⭐
                   </span>
@@ -286,6 +320,72 @@ export default function AdminMissions() {
                     </p>
                   </div>
                 ))}
+              </div>
+
+              {/* ── ⏰ กำหนดเวลาการสะสมดาว ── */}
+              <div className="mt-4 rounded-2xl bg-white border border-amber-100 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800">⏰ กำหนดเวลาการสะสมดาว</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      นักเรียนจะได้รับดาวเฉพาะภายในช่วงเวลานี้ — เว้นว่างไว้ = สะสมได้ตลอด
+                    </p>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black ${
+                    periodNow.open ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {periodNow.open ? '🟢 เปิดสะสม' : '⛔ ปิดสะสม'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">วันเริ่มสะสม</label>
+                    <input
+                      type="date"
+                      value={periodStart}
+                      onChange={e => { setPeriodStart(e.target.value); markStarEdited(); }}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">วันสิ้นสุด</label>
+                    <input
+                      type="date"
+                      value={periodEnd}
+                      onChange={e => { setPeriodEnd(e.target.value); markStarEdited(); }}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const d30 = new Date(Date.now() + 29 * 86400000).toISOString().slice(0, 10);
+                      setPeriodStart(today);
+                      setPeriodEnd(d30);
+                      markStarEdited();
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-all"
+                  >
+                    ⚡ 30 วันจากวันนี้
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPeriodStart(''); setPeriodEnd(''); markStarEdited(); }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all"
+                  >
+                    🕒 สะสมตลอดเวลา
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetStarAwards}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all ml-auto"
+                  >
+                    🔄 รีเซ็ตดาวนักเรียน ({awardsCount} รางวัล)
+                  </button>
+                </div>
               </div>
 
               <p className="text-[11px] text-slate-400 mt-3">

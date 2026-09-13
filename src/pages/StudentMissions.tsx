@@ -5,7 +5,7 @@ import MobileHeader from '../components/MobileHeader';
 import StudentSidebar from '../components/StudentSidebar';
 import { STUDENT_THEME_CSS } from '../styles/studentTheme';
 import type { Mission, Question } from '../types';
-import { getStarConditionStates, getTotalStarsForStudent, getStudentAwards, starConditionsTotal } from '../lib/starAchievements';
+import { getStarConditionStates, getTotalStarsForStudent, getStudentAwards, starConditionsTotal, getStarPeriodInfo } from '../lib/starAchievements';
 
 export default function StudentMissions() {
   const { missions, completions, addMission, addCompletion, getCompletionsForStudent } = useMissions();
@@ -75,6 +75,7 @@ export default function StudentMissions() {
   );
   // เงื่อนไขดาว 3 ข้อ (สถานะจริง)
   const starConditions = useMemo(() => getStarConditionStates(myId), [myId, myCompletions.length]);
+  const starPeriod = useMemo(() => getStarPeriodInfo(), []);
   const starAwards = useMemo(() => getStudentAwards(myId), [myId, myCompletions.length]);
   const starGoal = useMemo(() => starConditionsTotal(), [starConditions]);
 
@@ -324,6 +325,11 @@ export default function StudentMissions() {
               ได้แล้ว {starAwards.reduce((s, a) => s + a.stars, 0)}/{starGoal} ⭐
             </span>
           </div>
+          <p className={`text-xs font-bold mb-3 px-3 py-1.5 rounded-xl ${
+            starPeriod.open ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500 bg-slate-100'
+          }`}>
+            {starPeriod.open ? '🟢' : '⛔'} {starPeriod.statusText}
+          </p>
           <div className="space-y-2.5">
             {starConditions.map(c => (
               <div key={c.key} className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all ${
