@@ -210,16 +210,20 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
         // ทะเบียนผู้ใช้: normalize ทุกครั้งที่ดึงจากคลาวด์ — เติมฟิลด์ที่หาย (is_active/class_name/grade_level)
         const raw = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
         const value = row.id === USER_REGISTER_KEY ? normalizeUserRegister(raw) : raw;
+        // ต้องจำค่าลง lastKnown ก่อน setItem — มิฉะนั้น write interceptor จะถือว่า
+        // "มีการเขียนใหม่" แล้วอัปโหลดค่าที่เพิ่งดาวน์โหลดกลับขึ้นคลาวด์ทุกคีย์ทุกครั้งที่เปิดแอป
+        lastKnown.set(row.id, value);
         localStorage.setItem(row.id, value);
         localStorage.setItem(metaKey(row.id), String(cloudAt || Date.now()));
-        lastKnown.set(row.id, value); // ค่านี้ตรงกับคลาวด์แล้ว — ไม่ต้องอัปโหลดซ้ำ
-        if (value !== raw) mirrorWrite(row.id); // ส่งเวอร์ชันที่เติมครบกลับขึ้นคลาวด์
+        if (value !== raw) {
+          // สำเนาที่เติมฟิลด์ครบแล้วต่างจากคลาวด์ → อัปโหลดเวอร์ชันที่ครบกลับขึ้นไป
+          dirty.set(row.id, { value, updatedAt: new Date().toISOString() });
+          scheduleFlush();
+        }
         synced++;
       } else {
         lastKnown.set(row.id, local); // สำเนาเครื่องใหม่กว่า — จำไว้ ไม่ให้ polling ยัดซ้ำ
         if (row.id === USER_REGISTER_KEY) {
-        // ทะเบียนผู้ใช้: แม้สำเนาเครื่องจะ "ใหม่กว่า" ก็ต้องดูดรหัสผ่านจากคลาวด์
-        // กลับเข้ามาเสมอ — กันอุปกรณ์ที่ถือสำเนารหัสผ่านว่าง (เคยเกิดปัญหาล็อกอินไม่ได้)
         let merged = mergePasswords(local, row.value);
         // และ normalize ฟิลด์ที่จำเป็นด้วย — กันทะเบียนที่ไม่ครบฟิลด์วนกลับมาใหม่
         const norm = normalizeUserRegister(merged);
