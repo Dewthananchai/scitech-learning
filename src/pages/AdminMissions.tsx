@@ -55,6 +55,7 @@ export default function AdminMissions() {
   const [periodEnd, setPeriodEnd] = useState<string>(() => settings0.period_end || '');
   const [starSaved, setStarSaved] = useState(false);
   const [starEdited, setStarEdited] = useState(false);
+  const [showPeriod, setShowPeriod] = useState(false);
   const updateStarRule = (key: StarCondition['key'], patch: Partial<StarCondition>) => {
     setStarRules(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)));
     setStarEdited(true);
@@ -263,6 +264,20 @@ export default function AdminMissions() {
                   </span>
                   <button
                     type="button"
+                    onClick={() => setShowPeriod(v => !v)}
+                    title="กำหนดช่วงเวลาที่นักเรียนสะสมดาวได้"
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
+                      showPeriod
+                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-amber-500 shadow-md shadow-amber-500/25'
+                        : (periodStart || periodEnd)
+                        ? 'bg-white text-amber-700 border-amber-300 hover:bg-amber-50'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ⏰ กำหนดเวลา{(periodStart || periodEnd) && !showPeriod ? ' ✓' : ''}
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleResetStarRules}
                     className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all"
                   >
@@ -322,8 +337,8 @@ export default function AdminMissions() {
                 ))}
               </div>
 
-              {/* ── ⏰ กำหนดเวลาการสะสมดาว ── */}
-              <div className="mt-4 rounded-2xl bg-white border border-amber-100 p-4">
+              {/* ── ⏰ กำหนดเวลาการสะสมดาว (เปิด/ปิดด้วยปุ่ม กำหนดเวลา) ── */}
+              {showPeriod && <div className="mt-4 rounded-2xl bg-white border border-amber-100 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                   <div>
                     <h4 className="text-sm font-black text-slate-800">⏰ กำหนดเวลาการสะสมดาว</h4>
@@ -386,7 +401,7 @@ export default function AdminMissions() {
                     🔄 รีเซ็ตดาวนักเรียน ({awardsCount} รางวัล)
                   </button>
                 </div>
-              </div>
+              </div>}
 
               <p className="text-[11px] text-slate-400 mt-3">
                 ℹ️ การเปลี่ยนเงื่อนไขมีผลกับนักเรียนที่ยังไม่ได้รับดาวข้อนั้น — คนที่ได้ไปแล้วจะไม่ถูกเรียกเก็บคืน
