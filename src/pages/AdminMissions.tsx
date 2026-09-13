@@ -5,6 +5,7 @@ import { useAuth } from '../store/AuthContext';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import TeacherBottomNav from '../components/TeacherBottomNav';
 import AdminSidebar from '../components/AdminSidebar';
+import ThaiDatePicker from '../components/ThaiDatePicker';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
 import {
   getStarConditionsSettings,
@@ -355,20 +356,18 @@ export default function AdminMissions() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">วันเริ่มสะสม</label>
-                    <input
-                      type="date"
+                    <ThaiDatePicker
                       value={periodStart}
-                      onChange={e => { setPeriodStart(e.target.value); markStarEdited(); }}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none transition-all"
+                      onChange={iso => { setPeriodStart(iso); markStarEdited(); }}
+                      placeholder="เลือกวันเริ่ม"
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">วันสิ้นสุด</label>
-                    <input
-                      type="date"
+                    <ThaiDatePicker
                       value={periodEnd}
-                      onChange={e => { setPeriodEnd(e.target.value); markStarEdited(); }}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none transition-all"
+                      onChange={iso => { setPeriodEnd(iso); markStarEdited(); }}
+                      placeholder="เลือกวันสิ้นสุด"
                     />
                   </div>
                 </div>
