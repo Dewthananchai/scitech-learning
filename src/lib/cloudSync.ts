@@ -168,10 +168,15 @@ if (typeof window !== 'undefined') {
 
 /* ---------------- hydrate + mirror ---------------- */
 
+/** keys ที่ hydrate ดาวน์โหลดจริงในรอบล่าสุด (ใช้แจ้ง listeners) */
+const lastSyncedKeys = new Set<string>();
+
 /** ดึงข้อมูลจากคลาวด์มาอัปเดต localStorage เฉพาะแถวที่คลาวด์ใหม่กว่า */
 export async function hydrateFromCloud(): Promise<{ synced: number; errors: string[] }> {
   const supabase = getClient();
   if (!supabase) return { synced: 0, errors: [] };
+  if (hydrating) return { synced: 0, errors: [] }; // กันเรียกซ้อนจาก polling + focus
+  hydrating = true;
   const errors: string[] = [];
   let synced = 0;
   try {
@@ -215,6 +220,7 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
         lastKnown.set(row.id, value);
         localStorage.setItem(row.id, value);
         localStorage.setItem(metaKey(row.id), String(cloudAt || Date.now()));
+        lastSyncedKeys.add(row.id); // แจ้ง UI ที่ subscribe key นี้
         if (value !== raw) {
           // สำเนาที่เติมฟิลด์ครบแล้วต่างจากคลาวด์ → อัปโหลดเวอร์ชันที่ครบกลับขึ้นไป
           dirty.set(row.id, { value, updatedAt: new Date().toISOString() });
@@ -234,14 +240,49 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
           lastKnown.set(row.id, merged);
           mirrorWrite(row.id);
           synced++;
+          lastSyncedKeys.add(row.id);
         }
         }
       }
     }
   } catch (e) {
     errors.push(String(e));
+  } finally {
+    hydrating = false;
   }
   return { synced, errors };
+}
+let hydrating = false;
+
+/* ---------------- live cloud updates (ครูสร้าง → นักเรียนเห็นทันที) ----------------
+   ดึงข้อมูลจากคลาวด์เป็นระยะ (เฉพาะแถวที่คลาวด์ใหม่กว่า) — เครื่องที่เปิดค้างไว้
+   จะได้รับบทเรียน/ข้อสอบ/ประกาศใหม่จากอุปกรณ์อื่นโดยไม่ต้องรีโหลดหน้า */
+const CLOUD_POLL_MS = 5000;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** keys ที่เปลี่ยนจากคลาวด์ล่าสุด — UI ที่สนใจ key ไหน subscribe ผ่าน onCloudKeyChanged */
+const keyListeners = new Map<string, Set<() => void>>();
+
+/** สมัครรับการแจ้งเตือนเมื่อคลาวด์ส่งข้อมูลใหม่ของ key มาอัปเดต localStorage */
+export function onCloudKeyChanged(key: string, fn: () => void): () => void {
+  if (!keyListeners.has(key)) keyListeners.set(key, new Set());
+  keyListeners.get(key)!.add(fn);
+  return () => { keyListeners.get(key)?.delete(fn); };
+}
+
+function startCloudPolling(): void {
+  if (pollTimer || typeof window === 'undefined') return;
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'hidden') return; // แท็บถูกซ่อน — ประหยัดแบนด์วิดท์
+    void hydrateFromCloud().then(({ synced }) => {
+      if (synced > 0) {
+        lastSyncedKeys.forEach(k => keyListeners.get(k)?.forEach(fn => fn()));
+        lastSyncedKeys.clear();
+      }
+    });
+  }, CLOUD_POLL_MS);
+  // ดึงทันทีเมื่อกลับมาที่แท็บด้วย
+  window.addEventListener('focus', () => { void hydrateFromCloud(); });
 }
 
 /** รวมรหัสผ่านจากคลาวด์ (cloudRaw) เข้าสำเนาท้องถิ่น (localRaw) — คืน JSON ใหม่ถ้ามีการเติมรหัสผ่านที่หายไป */
@@ -516,6 +557,7 @@ export function initCloudSync(): Promise<void> {
       const meta = localStorage.getItem(metaKey(k));
       if (!meta) localStorage.setItem(metaKey(k), '0');
     }
+    startCloudPolling(); // ครูสร้างบทเรียน → นักเรียนทุกเครื่องเห็นภายใน ~5 วิ
   })();
   return initPromise;
 }

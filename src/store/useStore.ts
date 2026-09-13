@@ -10,6 +10,8 @@ const KEYS = {
   quizzes: 'scitech_quizzes',
 };
 
+import { onCloudKeyChanged } from '../lib/cloudSync';
+
 // Load from localStorage, fallback to mock data
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
@@ -32,18 +34,31 @@ function saveToStorage<T>(key: string, data: T): void {
 
 // Initial IDs for new items
 // Initial IDs for new items (ข้อมูลจริงเริ่มจากว่าง — ไม่มีตัวอย่าง/mock)
-let nextSubjectId = 1;
-let nextLessonId = 1;
-let nextQuestionId = 1;
-let nextQuizId = 1;
-let nextAnnouncementId = 1;
-let nextCalendarEventId = 1;
+// เริ่มจาก id ถัดไปของข้อมูลจริงในเครื่อง (หลัง hydrate จากคลาวด์) — กันสองเครื่อง
+// สร้าง id เดียวกันแล้วทับกันเองตอนซิงก์ (เครื่องที่เปิดหลังข้อมูลมีอยู่แล้ว)
+const nextIdFrom = (key: string): number => {
+  try {
+    const arr = JSON.parse(localStorage.getItem(key) || '[]');
+    if (Array.isArray(arr) && arr.length > 0) return Math.max(...arr.map((x: { id?: number }) => Number(x.id) || 0)) + 1;
+  } catch { /* ข้อมูลพัง → เริ่ม 1 */ }
+  return 1;
+};
+let nextSubjectId = nextIdFrom(KEYS.subjects);
+let nextLessonId = nextIdFrom(KEYS.lessons);
+let nextQuestionId = nextIdFrom(KEYS.questions);
+let nextQuizId = nextIdFrom(KEYS.quizzes);
+let nextAnnouncementId = nextIdFrom('scitech_announcements');
+let nextCalendarEventId = nextIdFrom('scitech_calendar');
 
 // ===== SUBJECTS & UNITS =====
 export function useSubjects() {
   const [subjects, setSubjects] = useState<SubjectUnit[]>(() =>
     loadFromStorage<SubjectUnit[]>(KEYS.subjects, [])
   );
+
+  // ครูสร้างหน่วยบนเครื่องอื่น → คลาวด์ส่งมา → อ่านซ้ำทันที (ไม่ต้องรีโหลด)
+  useEffect(() => onCloudKeyChanged(KEYS.subjects, () =>
+    setSubjects(loadFromStorage<SubjectUnit[]>(KEYS.subjects, []))), []);
 
   useEffect(() => {
     saveToStorage(KEYS.subjects, subjects);
@@ -80,6 +95,10 @@ export function useLessons() {
   const [lessons, setLessons] = useState<Lesson[]>(() =>
     loadFromStorage<Lesson[]>(KEYS.lessons, [])
   );
+
+  // ครูสร้างบทเรียนบนเครื่องอื่น → คลาวด์ส่งมา → นักเรียนเห็นภายใน ~5 วินาที
+  useEffect(() => onCloudKeyChanged(KEYS.lessons, () =>
+    setLessons(loadFromStorage<Lesson[]>(KEYS.lessons, []))), []);
 
   useEffect(() => {
     saveToStorage(KEYS.lessons, lessons);
