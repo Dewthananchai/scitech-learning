@@ -413,12 +413,16 @@ export default function AdminUsers() {
                         <td className="py-3 px-4 text-slate-500">{idx + 1}</td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm ${
+                            <div className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center text-white text-sm shrink-0 ${
                               u.role === 'admin' ? 'bg-gradient-to-br from-blue-500 to-indigo-500' :
                               u.role === 'teacher' ? 'bg-gradient-to-br from-emerald-400 to-teal-500' :
                               'bg-gradient-to-br from-amber-400 to-orange-500'
                             }`}>
-                              {u.role === 'student' ? '🎓' : '👨‍🏫'}
+                              {u.profile_image ? (
+                                <img src={u.profile_image} alt={u.full_name} className="w-full h-full object-cover" />
+                              ) : (
+                                u.role === 'student' ? '🎓' : '👨‍🏫'
+                              )}
                             </div>
                             <span className="font-medium">{u.full_name}</span>
                           </div>
@@ -662,7 +666,13 @@ export default function AdminUsers() {
                         return (
                           <div key={s.id} className={`flex items-center gap-4 p-3 rounded-xl ${idx < 3 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-100'}`}>
                             <div className="text-lg w-8 text-center font-bold">{medal}</div>
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm">🎓</div>
+                            <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm shrink-0">
+                              {s.profile_image ? (
+                                <img src={s.profile_image} alt={s.full_name} className="w-full h-full object-cover" />
+                              ) : (
+                                '🎓'
+                              )}
+                            </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{s.full_name}</p>
                               <p className="text-xs text-slate-500">ห้อง {s.class_name || '-'} • ทำแบบทดสอบ {s.quizCount} ครั้ง • เรียนจบ {s.completedLessons} บท</p>

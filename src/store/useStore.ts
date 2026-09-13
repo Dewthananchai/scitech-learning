@@ -819,6 +819,8 @@ export interface AppUser {
   school_name?: string;
   is_active: boolean;
   created_at: string;
+  /** รูปโปรไฟล์ (base64) — เขียนโดยหน้าโปรไฟล์และซิงก์ขึ้นคลาวด์พร้อมทะเบียน */
+  profile_image?: string;
 }
 
 /**
