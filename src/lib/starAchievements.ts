@@ -249,6 +249,14 @@ export function getStarProgress(studentId: number): StarProgress {
   return { lessonsCompleted, bestExamPercent, worksheetsSubmitted };
 }
 
+/** ชื่อกติกาแบบไดนามิก — ฝังเป้าหมายปัจจุบันที่ครูตั้งลงในข้อความ
+ *  (เช่น ครูตั้งเป้า 5 บท → "เรียนบทเรียนให้ครบ 5 บท" ไม่ใช่ข้อความเดิมติด 3) */
+export function starConditionLabel(c: StarCondition): string {
+  if (c.key === 'lessons3') return `เรียนบทเรียนให้ครบ ${c.target} บท`;
+  if (c.key === 'exam100') return `ทำข้อสอบให้ผ่าน ${c.target}%`;
+  return `ส่งใบงานครบ ${c.target} ใบงาน`;
+}
+
 /** เงื่อนไขไหนควรได้รับแล้ว (ตามความคืบหน้า) แต่ยังไม่ถูกบันทึกรางวัล */
 export function evaluateStarAwards(studentId: number): StarAward[] {
   const progress = getStarProgress(studentId);
@@ -334,6 +342,7 @@ export function getStarConditionStates(studentId: number): Array<
     const capped = c.key === 'exam100' ? v : Math.min(v, c.target);
     return {
       ...c,
+      label: starConditionLabel(c), // ชื่อตามเป้าหมายที่ครูตั้งจริง
       done: has(c.key) || (periodOpen && v >= c.target),
       progressText: c.key === 'exam100' ? `${v}%` : `${capped}/${c.target} ${unitOf(c.key)}`,
       progressValue: v,

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useMemo } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { useLessonSession, useLessonProgress, useMissions, useAnnouncements, useWorksheets, useWorksheetSubmissions, useCalendarEvents } from '../store/useStore';
-import { getStarConditionStates, getTotalStarsForStudent, starConditionsTotal } from '../lib/starAchievements';
+import { getStarConditionStates, getTotalStarsForStudent, starConditionsTotal, getStarPeriodInfo } from '../lib/starAchievements';
 import { useAuth } from '../store/AuthContext';
 import StudentNavigationBar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
@@ -54,6 +54,7 @@ export default function StudentDashboard() {
     [user, completedCount, submissions.length]
   );
   const starGoal = useMemo(() => starConditionsTotal(), [starConditions]);
+  const starPeriod = useMemo(() => getStarPeriodInfo(), []);
 
   // Active announcements for student
   const myAnnouncements = useMemo(() => {
@@ -471,7 +472,17 @@ export default function StudentDashboard() {
               </p>
             </div>
 
-            {/* Mission List — เงื่อนไขดาว 3 ข้อ (สถานะจริง) */}
+            {/* Mission List — เงื่อนไขดาว 3 ข้อ (สถานะจริง ตามที่ครูตั้ง) */}
+            {!starPeriod.open && (
+              <p className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-xl px-2.5 py-1.5 mb-1.5 text-center">
+                ⛔ {starPeriod.statusText}
+              </p>
+            )}
+            {starPeriod.open && starPeriod.daysLeft !== null && (
+              <p className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-xl px-2.5 py-1.5 mb-1.5 text-center">
+                🟢 {starPeriod.statusText}
+            </p>
+            )}
             <div className="space-y-1.5">
               {starConditions.map((m) => (
                 <div
