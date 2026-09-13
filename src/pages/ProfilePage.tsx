@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { useAuth } from '../store/AuthContext';
 import { useMissions, useLessonProgress, useLessonSession, useAttendance } from '../store/useStore';
+import { getTotalStarsForStudent } from '../lib/starAchievements';
 import MobileHeader from '../components/MobileHeader';
 import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import TeacherBottomNav from '../components/TeacherBottomNav';
@@ -26,7 +27,10 @@ export default function ProfilePage() {
   if (!user) return null;
 
   // Stats
-  const totalStars = completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+  const totalStars = getTotalStarsForStudent(
+    user.id,
+    completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0)
+  );
   const completedLessons = lessonSessions.filter(s => s.student_id === user.id && s.status === 'completed').length;
   const totalQuizzes = completions.filter(c => c.student_id === user.id).length;
 

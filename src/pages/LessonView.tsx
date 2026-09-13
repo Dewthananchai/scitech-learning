@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppStore } from '../store/AppContext';
 import { useLessonProgress, useQuestions, useLessonSession } from '../store/useStore';
+import { awardStars } from '../lib/starAchievements';
 import { useAuth } from '../store/AuthContext';
 import type { Question } from '../types';
 
@@ -221,6 +222,7 @@ export default function LessonView() {
     // Only mark lesson as completed if 100%
     if (score === 100 && isStudent && lesson && user) {
       completeLesson(lesson.id, user.id);
+      awardStars(user.id); // 🎯 เช็คเงื่อนไขดาว (เรียนครบ 3 บท ฯลฯ)
     }
     setStep('result');
   };

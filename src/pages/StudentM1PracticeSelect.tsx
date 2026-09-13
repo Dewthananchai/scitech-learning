@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
+import { awardStars } from '../lib/starAchievements';
 import StudentSidebar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
 import { STUDENT_THEME_CSS } from '../styles/studentTheme';
@@ -245,6 +246,7 @@ export default function StudentM1PracticeSelect() {
     };
 
     saveHistoryEntry(entry);
+    if (user) awardStars(user.id); // 🎯 เช็คเงื่อนไขดาว (ข้อสอบ 100% +5⭐)
     setExamState('result');
   };
 

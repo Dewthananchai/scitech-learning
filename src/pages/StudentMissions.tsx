@@ -5,6 +5,7 @@ import MobileHeader from '../components/MobileHeader';
 import StudentSidebar from '../components/StudentSidebar';
 import { STUDENT_THEME_CSS } from '../styles/studentTheme';
 import type { Mission, Question } from '../types';
+import { getStarConditionStates, getTotalStarsForStudent, getStudentAwards, STAR_CONDITIONS_TOTAL } from '../lib/starAchievements';
 
 export default function StudentMissions() {
   const { missions, completions, addMission, addCompletion, getCompletionsForStudent } = useMissions();
@@ -67,7 +68,14 @@ export default function StudentMissions() {
   // My completions
   const myCompletions = useMemo(() => getCompletionsForStudent(myId), [getCompletionsForStudent, myId]);
   const myCompletedMissionIds = useMemo(() => new Set(myCompletions.map(c => c.mission_id)), [myCompletions]);
-  const totalStars = useMemo(() => myCompletions.reduce((sum, c) => sum + c.stars_earned, 0), [myCompletions]);
+  // ดาวรวม = ภารกิจ + เงื่อนไข 3 ข้อ
+  const totalStars = useMemo(
+    () => getTotalStarsForStudent(myId, myCompletions.reduce((sum, c) => sum + c.stars_earned, 0)),
+    [myCompletions, myId]
+  );
+  // เงื่อนไขดาว 3 ข้อ (สถานะจริง)
+  const starConditions = useMemo(() => getStarConditionStates(myId), [myId, myCompletions.length]);
+  const starAwards = useMemo(() => getStudentAwards(myId), [myId, myCompletions.length]);
 
   // Active quiz state
   const [activeQuiz, setActiveQuiz] = useState<{ mission: Mission; questions: Question[] } | null>(null);
@@ -304,6 +312,38 @@ export default function StudentMissions() {
           <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 text-white shadow-lg">
             <p className="text-sm opacity-90 mb-1">📋 ภารกิจวันนี้</p>
             <p className="text-3xl font-bold">{allMissions.length}</p>
+          </div>
+        </div>
+
+        {/* 🎯 เงื่อนไขการได้ดาว (3 ข้อ — สถานะจริง) */}
+        <div className="bg-white rounded-2xl shadow p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-lg">🎯 เงื่อนไขการได้ดาว</h3>
+            <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+              ได้แล้ว {starAwards.reduce((s, a) => s + a.stars, 0)}/{STAR_CONDITIONS_TOTAL} ⭐
+            </span>
+          </div>
+          <div className="space-y-2.5">
+            {starConditions.map(c => (
+              <div key={c.key} className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all ${
+                c.done ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'
+              }`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                  c.done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  {c.done ? '✅' : c.emoji}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`font-bold text-sm ${c.done ? 'text-emerald-700' : 'text-slate-700'}`}>{c.label}</p>
+                  <p className="text-xs text-slate-500">ความคืบหน้า: {c.progressText}</p>
+                </div>
+                <span className={`text-sm font-black px-2.5 py-1 rounded-xl shrink-0 ${
+                  c.done ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                }`}>
+                  {c.done ? `+${c.reward} ⭐ สำเร็จ` : `+${c.reward} ⭐`}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 

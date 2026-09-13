@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useMemo } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { useLessonSession, useLessonProgress, useMissions, useAnnouncements, useWorksheets, useWorksheetSubmissions, useCalendarEvents } from '../store/useStore';
+import { getStarConditionStates, getTotalStarsForStudent, STAR_CONDITIONS_TOTAL } from '../lib/starAchievements';
 import { useAuth } from '../store/AuthContext';
 import StudentNavigationBar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
@@ -40,11 +41,18 @@ export default function StudentDashboard() {
     return lessons.filter(l => getStatus(l.id, user.id) === 'in_progress').length;
   }, [lessons, user, getStatus]);
 
-  // Stars earned from mission completions
+  // Stars earned = ภารกิจ (quiz missions) + เงื่อนไข 3 ข้อ (เรียนครบ/ข้อสอบ 100%/ส่งใบงานครบ)
   const totalStars = useMemo(() => {
     if (!user) return 0;
-    return completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+    const missionStars = completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+    return getTotalStarsForStudent(user.id, missionStars);
   }, [completions, user]);
+
+  // เงื่อนไขดาว 3 ข้อ — สถานะจริง (อ่านจากข้อมูลปัจจุบันทุกครั้งที่การ์ดเรนเดอร์)
+  const starConditions = useMemo(
+    () => (user ? getStarConditionStates(user.id) : []),
+    [user, completedCount, submissions.length]
+  );
 
   // Active announcements for student
   const myAnnouncements = useMemo(() => {
@@ -416,35 +424,31 @@ export default function StudentDashboard() {
               <div className="w-full bg-amber-100 rounded-full h-2.5 overflow-hidden">
                 <div
                   className="bg-gradient-to-r from-amber-400 via-yellow-400 to-orange-400 h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, (totalStars / 50) * 100)}%` }}
+                  style={{ width: `${Math.min(100, (totalStars / STAR_CONDITIONS_TOTAL) * 100)}%` }}
                 />
               </div>
               <p className="text-[10px] text-amber-700 font-bold mt-1 text-right">
-                เป้าหมาย 50 ดาว 🏆
+                เป้าหมาย {STAR_CONDITIONS_TOTAL} ดาว 🏆
               </p>
             </div>
 
-            {/* Mission List */}
+            {/* Mission List — เงื่อนไขดาว 3 ข้อ (สถานะจริง) */}
             <div className="space-y-1.5">
-              {[
-                { emoji: '📘', label: 'เรียนบทเรียนให้ครบ 3 บท', stars: 3, done: completedCount >= 3 },
-                { emoji: '📝', label: 'ทำข้อสอบให้ผ่าน 80%', stars: 5, done: false },
-                { emoji: '🔥', label: 'เรียนติดต่อกัน 7 วัน', stars: 10, done: false },
-              ].map((m, i) => (
+              {starConditions.map((m) => (
                 <div
-                  key={i}
+                  key={m.key}
                   className={`flex items-center gap-2 p-2.5 rounded-xl transition-all ${
                     m.done ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-100'
                   }`}
                 >
                   <span className="text-base">{m.emoji}</span>
-                  <span className={`text-xs font-bold flex-1 truncate ${m.done ? 'text-emerald-700 line-through' : 'text-slate-700'}`}>
+                  <span className={`text-xs font-bold flex-1 truncate ${m.done ? 'text-emerald-700' : 'text-slate-700'}`}>
                     {m.label}
                   </span>
                   <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
                     m.done ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-50 text-amber-700'
                   }`}>
-                    {m.done ? '✅ สำเร็จ' : `+${m.stars}⭐`}
+                    {m.done ? `✅ +${m.reward}⭐` : `+${m.reward}⭐ • ${m.progressText}`}
                   </span>
                 </div>
               ))}

@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useLayout } from '../store/LayoutContext';
 import { useAuth } from '../store/AuthContext';
 import { useMissions } from '../store/useStore';
+import { getTotalStarsForStudent } from '../lib/starAchievements';
 import { useMemo } from 'react';
 
 export interface NavItem {
@@ -28,7 +29,8 @@ export default function StudentSidebar() {
 
   const totalStars = useMemo(() => {
     if (!user) return 0;
-    return completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+    const missionStars = completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+    return getTotalStarsForStudent(user.id, missionStars);
   }, [completions, user]);
 
   const handleNavClick = () => closeSidebar();

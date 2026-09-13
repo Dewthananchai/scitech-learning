@@ -1,6 +1,7 @@
 import { useLayout } from '../store/LayoutContext';
 import { useAuth } from '../store/AuthContext';
 import { useMissions, useAnnouncements, useAnnouncementReads, filterVisibleAnnouncements } from '../store/useStore';
+import { getTotalStarsForStudent } from '../lib/starAchievements';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -55,7 +56,8 @@ export default function MobileHeader({ title }: MobileHeaderProps) {
 
   const totalStars = useMemo(() => {
     if (!user) return 0;
-    return completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+    const missionStars = completions.filter(c => c.student_id === user.id).reduce((sum, c) => sum + c.stars_earned, 0);
+    return getTotalStarsForStudent(user.id, missionStars);
   }, [completions, user]);
 
   // 🔔 badge: teacher announcements visible to THIS student that are still unread

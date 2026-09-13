@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useWorksheets, useWorksheetSubmissions } from '../store/useStore';
 import { useAuth } from '../store/AuthContext';
+import { awardStars } from '../lib/starAchievements';
 import { GRADES, Worksheet, WorksheetAnswer, WorksheetQuestion } from '../types';
 import StudentSidebar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
@@ -123,6 +124,8 @@ export default function StudentWorksheetDo() {
       submitted_at: new Date().toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       is_late: isLate,
     });
+    // 🎯 เช็คเงื่อนไขดาว (ส่งครบ 3 ใบงาน +10⭐) — หลังบันทึกคำตอบลง localStorage แล้ว
+    setTimeout(() => awardStars(user.id), 400);
     setSubmitted(true);
     setToast('✅ ส่งคำตอบเรียบร้อย!');
     setTimeout(() => setToast(null), 2500);

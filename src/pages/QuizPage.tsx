@@ -1,6 +1,8 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../store/AppContext';
+import { useAuth } from '../store/AuthContext';
+import { awardStars } from '../lib/starAchievements';
 import type { Question, QuizResult } from '../types';
 
 /* ============================================================
@@ -137,6 +139,7 @@ interface ShuffledQuestion extends Question {
 export default function QuizPage() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { lessons, questions, quizzes , subjects } = useAppStore();
   const lesson = lessons.find(l => l.id === Number(lessonId));
   const subject = lesson ? subjects.find(s => s.id === lesson.subject_unit_id) : null;
@@ -214,9 +217,29 @@ export default function QuizPage() {
       };
     });
     setResults(quizResults);
-    setScore(Math.round((correct / questionsData.length) * 100));
+    const pct = Math.round((correct / questionsData.length) * 100);
+    setScore(pct);
     setSubmitted(true);
-  }, [questionsData, answers]);
+
+    // บันทึกผลทำข้อสอบบทเรียน (ซิงก์คลาวด์) + เช็คเงื่อนไขดาว (ผ่าน 100% +5⭐)
+    if (user) {
+      try {
+        const histKey = 'scitech_quiz_history';
+        const hist: Array<Record<string, unknown>> =
+          JSON.parse(localStorage.getItem(histKey) || '[]');
+        hist.unshift({
+          student_id: user.id,
+          lesson_id: Number(lessonId),
+          score: pct,
+          total_questions: questionsData.length,
+          total_correct: correct,
+          completed_at: new Date().toISOString(),
+        });
+        localStorage.setItem(histKey, JSON.stringify(hist.slice(0, 100)));
+        awardStars(user.id);
+      } catch { /* ไม่บล็อกการทำข้อสอบ */ }
+    }
+  }, [questionsData, answers, user, lessonId]);
 
   const passed = score >= (quizConfig?.passing_score || 70);
 
