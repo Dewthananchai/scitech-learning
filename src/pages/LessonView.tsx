@@ -660,7 +660,7 @@ export default function LessonView() {
         ) : (
           <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-emerald-500 p-8 text-white mb-8">
             <h1 className="text-2xl font-bold mb-2">{lesson.title}</h1>
-            <p className="text-blue-100 text-sm">{subject?.unit_code} · {subject?.unit_name}</p>
+            <p className="text-blue-100 text-sm">{subject ? `${subject.unit_code} · ${subject.unit_name}` : 'หน่วยการเรียนรู้ (ไม่ระบุ)'}</p>
           </div>
         )}
 

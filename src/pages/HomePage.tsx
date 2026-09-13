@@ -118,17 +118,6 @@ export default function HomePage() {
       });
   }, [lessons, subjects]);
 
-  // Fill remaining slots with defaults
-  while (featuredLessons.length < 3) {
-    const idx = featuredLessons.length;
-    const defaults = [
-      { id: 0, title: 'พืชและสิ่งรอบตัว', grade: 1, unitName: 'สิ่งมีชีวิตกับสิ่งแวดล้อม', difficulty: 1, cover_image: null, theme: coverThemes[0] },
-      { id: 0, title: 'วัสดุรอบตัว', grade: 1, unitName: 'วัสดุรอบตัว', difficulty: 1, cover_image: null, theme: coverThemes[1] },
-      { id: 0, title: 'ระบบสุริยะ', grade: 4, unitName: 'โลกและอวกาศ', difficulty: 2, cover_image: null, theme: coverThemes[2] },
-    ];
-    featuredLessons.push(defaults[idx] as any);
-  }
-
   const celebrate = () => {
     const icons = ['⭐', '✨', '🌈', '🪐', '🚀', '🧪', '💙', '💚', '🎉'];
     const items = Array.from({ length: 18 }, (_, i) => {
@@ -307,10 +296,10 @@ export default function HomePage() {
 
                     <div className="flex justify-between text-sm text-slate-500 font-bold mb-1.5">
                       <span>ความคืบหน้า</span>
-                      <span>{lesson.id ? Math.floor(Math.random() * 40 + 20) : 0}%</span>
+                      <span>เริ่มต้น</span>
                     </div>
                     <div className="h-2.5 overflow-hidden rounded-full bg-slate-200 mb-3">
-                      <div className={`h-full rounded-full ${theme.progressColor}`} style={{ width: lesson.id ? `${Math.floor(Math.random() * 40 + 20)}%` : '0%' }}></div>
+                      <div className={`h-full rounded-full ${theme.progressColor}`} style={{ width: '0%' }}></div>
                     </div>
 
                     <p className="text-sm text-slate-500 font-bold mb-4">⭐ เรียนจบรับ {lesson.difficulty === 1 ? 15 : lesson.difficulty === 2 ? 20 : 25} ดาว</p>
@@ -319,7 +308,7 @@ export default function HomePage() {
                       onClick={() => { celebrate(); if (lesson.id) window.location.href = `/lesson/${lesson.id}`; }}
                       className="w-full py-3 rounded-[13px] text-blue-700 bg-blue-50 font-extrabold text-sm hover:text-white hover:bg-blue-500 transition-colors"
                     >
-                      {lesson.id ? '🎮 เรียนต่อ' : '🚀 เริ่มเรียน'}
+                      🎮 เริ่มเรียน
                     </button>
                   </article>
                 );

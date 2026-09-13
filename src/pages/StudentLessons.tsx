@@ -73,16 +73,17 @@ export default function StudentLessons() {
     };
   }, [publishedLessons, user, getStatus]);
 
-  // Group by grade
+  // Group by grade — บทเรียนที่หน่วยถูกลบไปแล้วยังต้องแสดง (จัดกลุ่มใน "หน่วยทั่วไป" ของชั้นที่ครูตั้งไว้)
   const gradeGroups = useMemo(() => {
     const groups: Record<number, Record<number, typeof filteredLessons>> = {};
+    let orphanId = -1; // บทเรียนที่ไม่มีหน่วยอ้างอิง → กลุ่ม id ลบ
     filteredLessons.forEach(lesson => {
       const unit = subjects.find(s => s.id === lesson.subject_unit_id);
-      if (!unit) return;
-      const grade = unit.grade_level;
+      const grade = unit?.grade_level ?? (lesson as { grade_level?: number }).grade_level ?? 0;
       if (!groups[grade]) groups[grade] = {};
-      if (!groups[grade][unit.id]) groups[grade][unit.id] = [];
-      groups[grade][unit.id].push(lesson);
+      const bucketId = unit ? unit.id : orphanId--;
+      if (!groups[grade][bucketId]) groups[grade][bucketId] = [];
+      groups[grade][bucketId].push(lesson);
     });
     return groups;
   }, [filteredLessons, subjects]);
@@ -304,9 +305,9 @@ export default function StudentLessons() {
                     <span className="text-2xl">{gConf.icon}</span>
                     <div>
                       <h2 className="text-base md:text-lg font-black text-slate-800 flex items-center gap-2">
-                        <span>{gConf.name}</span>
+                        <span>{grade === 0 ? 'บทเรียนทั่วไป' : gConf.name}</span>
                         <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                          {GRADES.find(g => g.level === grade)?.label || `ป.${grade}`}
+                          {grade === 0 ? 'ไม่ระบุชั้น' : GRADES.find(g => g.level === grade)?.label || `ป.${grade}`}
                         </span>
                       </h2>
                     </div>
@@ -329,7 +330,13 @@ export default function StudentLessons() {
                           📂
                         </div>
                         <h3 className="font-extrabold text-sm md:text-base text-slate-800">
-                          <span className="text-blue-600 font-black">{unit?.unit_code || 'หน่วยที่'}</span> {unit?.unit_name || 'หน่วยการเรียนรู้'}
+                          {unit ? (
+                            <>
+                              <span className="text-blue-600 font-black">{unit.unit_code || 'หน่วยที่'}</span> {unit.unit_name || 'หน่วยการเรียนรู้'}
+                            </>
+                          ) : (
+                            <span className="text-slate-500">📂 หน่วยการเรียนรู้ (ไม่ระบุ)</span>
+                          )}
                         </h3>
                         <span className="text-[11px] font-bold bg-white/90 text-slate-600 px-2 py-0.5 rounded-full shadow-2xs">
                           {unitLessons.length} บท
@@ -412,7 +419,7 @@ export default function StudentLessons() {
                                 {/* Bottom Level Tag */}
                                 <div className="absolute bottom-2 left-2.5 z-10">
                                   <span className="bg-white/90 backdrop-blur-md text-slate-800 text-[10px] px-2 py-0.5 rounded-md font-extrabold shadow-xs">
-                                    {GRADES.find(g => g.level === grade)?.label || `ป.${grade}`}
+                                    {grade === 0 ? 'ไม่ระบุชั้น' : GRADES.find(g => g.level === grade)?.label || `ป.${grade}`}
                                   </span>
                                 </div>
                               </div>
