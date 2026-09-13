@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useMemo } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { useLessonSession, useLessonProgress, useMissions, useAnnouncements, useWorksheets, useWorksheetSubmissions, useCalendarEvents } from '../store/useStore';
-import { getStarConditionStates, getTotalStarsForStudent, STAR_CONDITIONS_TOTAL } from '../lib/starAchievements';
+import { getStarConditionStates, getTotalStarsForStudent, starConditionsTotal } from '../lib/starAchievements';
 import { useAuth } from '../store/AuthContext';
 import StudentNavigationBar from '../components/StudentSidebar';
 import MobileHeader from '../components/MobileHeader';
@@ -53,6 +53,7 @@ export default function StudentDashboard() {
     () => (user ? getStarConditionStates(user.id) : []),
     [user, completedCount, submissions.length]
   );
+  const starGoal = useMemo(() => starConditionsTotal(), [starConditions]);
 
   // Active announcements for student
   const myAnnouncements = useMemo(() => {
@@ -424,11 +425,11 @@ export default function StudentDashboard() {
               <div className="w-full bg-amber-100 rounded-full h-2.5 overflow-hidden">
                 <div
                   className="bg-gradient-to-r from-amber-400 via-yellow-400 to-orange-400 h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, (totalStars / STAR_CONDITIONS_TOTAL) * 100)}%` }}
+                  style={{ width: `${Math.min(100, starGoal > 0 ? (totalStars / starGoal) * 100 : 0)}%` }}
                 />
               </div>
               <p className="text-[10px] text-amber-700 font-bold mt-1 text-right">
-                เป้าหมาย {STAR_CONDITIONS_TOTAL} ดาว 🏆
+                เป้าหมาย {starGoal} ดาว 🏆
               </p>
             </div>
 

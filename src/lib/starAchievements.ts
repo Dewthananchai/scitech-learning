@@ -1,10 +1,9 @@
 /* ============================================================
    🎯 เงื่อนไขการได้ดาว (Star achievements)
-   กติกา 3 ข้อ (คงที่):
+   กติกา 3 ข้อ (ค่าเริ่มต้น — ครูแก้ไขได้ที่หน้า จัดการภารกิจ):
      1. เรียนบทเรียนให้ครบ 3 บท        +3⭐
      2. ทำข้อสอบให้ผ่าน 100%          +5⭐
      3. ส่งใบงานครบ 3 ใบ              +10⭐
-   ผลรวมสูงสุด 18⭐ — ได้ครั้งเดียวต่อบัญชี (one-time)
 
    ข้อมูลนำเข้า:
      • จำนวนบทเรียนจบ ← scitech_lesson_sessions (status 'completed')
@@ -21,15 +20,53 @@ export interface StarCondition {
   emoji: string;
   label: string;
   reward: number;
+  /** เป้าหมายที่ต้องทำให้ถึง (จำนวนบท/เปอร์เซ็นต์ข้อสอบ/จำนวนใบงาน) */
+  target: number;
 }
 
-export const STAR_CONDITIONS: StarCondition[] = [
-  { key: 'lessons3', emoji: '📘', label: 'เรียนบทเรียนให้ครบ 3 บท', reward: 3 },
-  { key: 'exam100', emoji: '📝', label: 'ทำข้อสอบให้ผ่าน 100%', reward: 5 },
-  { key: 'worksheets3', emoji: '📋', label: 'ส่งใบงานครบ 3 ใบงาน', reward: 10 },
+/** ค่าเริ่มต้น — ใช้เมื่อครูยังไม่เคยแก้ไข */
+export const DEFAULT_STAR_CONDITIONS: StarCondition[] = [
+  { key: 'lessons3', emoji: '📘', label: 'เรียนบทเรียนให้ครบ 3 บท', reward: 3, target: 3 },
+  { key: 'exam100', emoji: '📝', label: 'ทำข้อสอบให้ผ่าน 100%', reward: 5, target: 100 },
+  { key: 'worksheets3', emoji: '📋', label: 'ส่งใบงานครบ 3 ใบงาน', reward: 10, target: 3 },
 ];
 
-export const STAR_CONDITIONS_TOTAL = STAR_CONDITIONS.reduce((s, c) => s + c.reward, 0);
+/** กติกาปัจจุบัน — อ่านจาก scitech_star_conditions (ซิงก์คลาวด์ ทุกอุปกรณ์เห็นเหมือนกัน)
+ *  ถ้าครูแก้เงื่อนไข ค่าที่เปลี่ยนจะมีผลกับนักเรียนที่ "ยังไม่ได้รางวัล" เท่านั้น */
+const CONDITIONS_KEY = 'scitech_star_conditions';
+export function getStarConditions(): StarCondition[] {
+  try {
+    const raw = localStorage.getItem(CONDITIONS_KEY);
+    if (!raw) return DEFAULT_STAR_CONDITIONS;
+    const saved = JSON.parse(raw) as StarCondition[];
+    if (!Array.isArray(saved) || saved.length !== 3) return DEFAULT_STAR_CONDITIONS;
+    // ผสมกับค่าเริ่มต้น (กัน key/emoji หายจากเวอร์ชันเก่า)
+    return DEFAULT_STAR_CONDITIONS.map(d => {
+      const s = saved.find(x => x.key === d.key);
+      return s ? { ...d, reward: Math.max(0, Number(s.reward) || d.reward), target: Math.max(1, Number(s.target) || d.target) } : d;
+    });
+  } catch {
+    return DEFAULT_STAR_CONDITIONS;
+  }
+}
+
+/** บันทึกกติกาใหม่ (ครูแก้จากหน้าจัดการภารกิจ) — เขียน localStorage แล้ว sync layer อัปขึ้นคลาวด์เอง */
+export function setStarConditions(conditions: StarCondition[]): void {
+  localStorage.setItem(CONDITIONS_KEY, JSON.stringify(conditions));
+}
+
+/** รีเซ็ตกลับค่าเริ่มต้น */
+export function resetStarConditions(): void {
+  localStorage.removeItem(CONDITIONS_KEY);
+}
+
+/** ผลรวมดาวสูงสุดตามกติกาปัจจุบัน (อ่านสด — อย่าแคชค่านี้ในโมดูล) */
+export function starConditionsTotal(): number {
+  return getStarConditions().reduce((s, c) => s + c.reward, 0);
+}
+
+/** @deprecated ใช้ starConditionsTotal() แทน — คงไว้เพื่อความเข้ากันได้ */
+export const STAR_CONDITIONS_TOTAL = DEFAULT_STAR_CONDITIONS.reduce((s, c) => s + c.reward, 0);
 
 const AWARDS_KEY = 'scitech_star_awards';
 
@@ -121,24 +158,26 @@ export function getStarProgress(studentId: number): StarProgress {
 /** เงื่อนไขไหนควรได้รับแล้ว (ตามความคืบหน้า) แต่ยังไม่ถูกบันทึกรางวัล */
 export function evaluateStarAwards(studentId: number): StarAward[] {
   const progress = getStarProgress(studentId);
+  const conditions = getStarConditions();
   const earned = loadAwards().filter(a => a.student_id === studentId);
   const has = (k: StarCondition['key']) => earned.some(a => a.condition === k);
 
   const newAwards: StarAward[] = [];
-  const give = (k: StarCondition['key'], ok: boolean) => {
-    if (!ok || has(k)) return;
-    const cond = STAR_CONDITIONS.find(c => c.key === k)!;
+  const give = (cond: StarCondition, value: number) => {
+    if (value < cond.target || has(cond.key)) return;
     newAwards.push({
       student_id: studentId,
-      condition: k,
+      condition: cond.key,
       stars: cond.reward,
       awarded_at: new Date().toISOString(),
     });
   };
 
-  give('lessons3', progress.lessonsCompleted >= 3);
-  give('exam100', progress.bestExamPercent >= 100);
-  give('worksheets3', progress.worksheetsSubmitted >= 3);
+  for (const cond of conditions) {
+    if (cond.key === 'lessons3') give(cond, progress.lessonsCompleted);
+    else if (cond.key === 'exam100') give(cond, progress.bestExamPercent);
+    else if (cond.key === 'worksheets3') give(cond, progress.worksheetsSubmitted);
+  }
   return newAwards;
 }
 
@@ -171,15 +210,25 @@ export function getTotalStarsForStudent(studentId: number, missionStars: number)
 
 /** สถานะเงื่อนไขครบทั้ง 3 ข้อ (แสดงเช็คลิสต์) */
 export function getStarConditionStates(studentId: number): Array<
-  StarCondition & { done: boolean; progressText: string }
+  StarCondition & { done: boolean; progressText: string; progressValue: number }
 > {
   const p = getStarProgress(studentId);
+  const conditions = getStarConditions();
   const earned = getStudentAwards(studentId);
   const has = (k: StarCondition['key']) => earned.some(a => a.condition === k);
+  const valueOf = (k: StarCondition['key']): number =>
+    k === 'lessons3' ? p.lessonsCompleted : k === 'exam100' ? p.bestExamPercent : p.worksheetsSubmitted;
+  const unitOf = (k: StarCondition['key']): string =>
+    k === 'lessons3' ? 'บท' : k === 'exam100' ? '%' : 'ใบ';
   // done = ครบตามเงื่อนไข (ความคืบหน้าถึงเป้า) — ดาวจะถูกบันทึกเมื่อ awardStars ทำงาน
-  return [
-    { ...STAR_CONDITIONS[0], done: p.lessonsCompleted >= 3 || has('lessons3'), progressText: `${Math.min(p.lessonsCompleted, 3)}/3 บท` },
-    { ...STAR_CONDITIONS[1], done: p.bestExamPercent >= 100 || has('exam100'), progressText: `${p.bestExamPercent}%` },
-    { ...STAR_CONDITIONS[2], done: p.worksheetsSubmitted >= 3 || has('worksheets3'), progressText: `${Math.min(p.worksheetsSubmitted, 3)}/3 ใบ` },
-  ];
+  return conditions.map(c => {
+    const v = valueOf(c.key);
+    const capped = c.key === 'exam100' ? v : Math.min(v, c.target);
+    return {
+      ...c,
+      done: v >= c.target || has(c.key),
+      progressText: c.key === 'exam100' ? `${v}%` : `${capped}/${c.target} ${unitOf(c.key)}`,
+      progressValue: v,
+    };
+  });
 }

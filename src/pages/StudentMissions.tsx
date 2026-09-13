@@ -5,7 +5,7 @@ import MobileHeader from '../components/MobileHeader';
 import StudentSidebar from '../components/StudentSidebar';
 import { STUDENT_THEME_CSS } from '../styles/studentTheme';
 import type { Mission, Question } from '../types';
-import { getStarConditionStates, getTotalStarsForStudent, getStudentAwards, STAR_CONDITIONS_TOTAL } from '../lib/starAchievements';
+import { getStarConditionStates, getTotalStarsForStudent, getStudentAwards, starConditionsTotal } from '../lib/starAchievements';
 
 export default function StudentMissions() {
   const { missions, completions, addMission, addCompletion, getCompletionsForStudent } = useMissions();
@@ -76,6 +76,7 @@ export default function StudentMissions() {
   // เงื่อนไขดาว 3 ข้อ (สถานะจริง)
   const starConditions = useMemo(() => getStarConditionStates(myId), [myId, myCompletions.length]);
   const starAwards = useMemo(() => getStudentAwards(myId), [myId, myCompletions.length]);
+  const starGoal = useMemo(() => starConditionsTotal(), [starConditions]);
 
   // Active quiz state
   const [activeQuiz, setActiveQuiz] = useState<{ mission: Mission; questions: Question[] } | null>(null);
@@ -320,7 +321,7 @@ export default function StudentMissions() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-lg">🎯 เงื่อนไขการได้ดาว</h3>
             <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
-              ได้แล้ว {starAwards.reduce((s, a) => s + a.stars, 0)}/{STAR_CONDITIONS_TOTAL} ⭐
+              ได้แล้ว {starAwards.reduce((s, a) => s + a.stars, 0)}/{starGoal} ⭐
             </span>
           </div>
           <div className="space-y-2.5">

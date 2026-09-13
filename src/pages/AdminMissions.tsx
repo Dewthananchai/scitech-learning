@@ -6,6 +6,14 @@ import TeacherMobileHeader from '../components/TeacherMobileHeader';
 import TeacherBottomNav from '../components/TeacherBottomNav';
 import AdminSidebar from '../components/AdminSidebar';
 import { TEACHER_THEME_CSS } from '../styles/studentTheme';
+import {
+  getStarConditions,
+  setStarConditions,
+  resetStarConditions,
+  starConditionsTotal,
+  getStudentAwards,
+  type StarCondition,
+} from '../lib/starAchievements';
 import type { Mission } from '../types';
 
 const GRADE_OPTIONS = [1, 2, 3, 4, 5, 6];
@@ -36,6 +44,36 @@ export default function AdminMissions() {
 
   const totalStars = completions.reduce((sum, c) => sum + c.stars_earned, 0);
   const totalCompletions = completions.length;
+
+  /* ── 🎯 เงื่อนไขการได้ดาว (แก้ไขได้ — ซิงก์คลาวด์ทุกอุปกรณ์) ── */
+  const [starRules, setStarRules] = useState<StarCondition[]>(() => getStarConditions());
+  const [starSaved, setStarSaved] = useState(false);
+  const [starEdited, setStarEdited] = useState(false);
+  const updateStarRule = (key: StarCondition['key'], patch: Partial<StarCondition>) => {
+    setStarRules(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)));
+    setStarEdited(true);
+    setStarSaved(false);
+  };
+  const handleSaveStarRules = () => {
+    const clean = starRules.map(r => ({
+      ...r,
+      reward: Math.max(0, Math.min(100, Math.round(r.reward) || 0)),
+      target: Math.max(1, Math.round(r.target) || 1),
+    }));
+    setStarConditions(clean);
+    setStarRules(clean);
+    setStarEdited(false);
+    setStarSaved(true);
+    setTimeout(() => setStarSaved(false), 2500);
+  };
+  const handleResetStarRules = () => {
+    if (!confirm('รีเซ็ตเงื่อนไขดาวกลับค่าเริ่มต้น (3 บท +3⭐ · 100% +5⭐ · 3 ใบงาน +10⭐)?')) return;
+    resetStarConditions();
+    setStarRules(getStarConditions());
+    setStarEdited(false);
+    setStarSaved(false);
+  };
+  const starGoal = starRules.reduce((s, r) => s + r.reward, 0);
 
   const resetForm = () => {
     setForm({ title: '', description: '', grade_level: 1, stars_reward: 10, question_count: 5, lesson_id: 0, is_daily_random: false });
@@ -171,6 +209,88 @@ export default function AdminMissions() {
                 <p className="text-[11px] font-bold text-slate-500 mb-1">⭐ ดาวที่แจกแล้ว</p>
                 <p className="text-2xl font-black text-amber-600">{totalStars}</p>
               </div>
+            </div>
+
+            {/* ── 🎯 เงื่อนไขการได้ดาว (ครูแก้ไขได้) ── */}
+            <div className="rounded-2xl border-2 border-amber-200/70 bg-gradient-to-br from-amber-50/60 to-orange-50/40 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-black text-base text-slate-800 flex items-center gap-2">
+                    <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow">⭐</span>
+                    เงื่อนไขการได้รับดาว
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    กติกา 3 ข้อที่นักเรียนต้องทำเพื่อรับดาว — แก้เป้าหมายและดาวรางวัลได้ (ซิงก์ทุกอุปกรณ์ทันที)
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-white text-amber-700 border border-amber-200">
+                    รวมสูงสุด {starGoal} ⭐
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleResetStarRules}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all"
+                  >
+                    ↺ ค่าเริ่มต้น
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveStarRules}
+                    disabled={!starEdited}
+                    className={`px-4 py-1.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      starSaved ? 'bg-emerald-600' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                    }`}
+                  >
+                    {starSaved ? '✅ บันทึกแล้ว' : '💾 บันทึกเงื่อนไข'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {starRules.map(rule => (
+                  <div key={rule.key} className="rounded-2xl bg-white border border-amber-100 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xl">{rule.emoji}</span>
+                      <span className="text-xs font-bold text-slate-700 flex-1">
+                        {rule.key === 'lessons3' ? 'เรียนบทเรียนครบ' : rule.key === 'exam100' ? 'ทำข้อสอบผ่าน' : 'ส่งใบงานครบ'}
+                      </span>
+                    </div>
+
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                      เป้าหมาย {rule.key === 'exam100' ? '(คะแนน %)' : '(จำนวน)'}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={rule.key === 'exam100' ? 100 : 50}
+                      value={rule.target}
+                      onChange={e => updateStarRule(rule.key, { target: Number(e.target.value) })}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none transition-all mb-2.5"
+                    />
+
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">⭐ ดาวรางวัล</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={rule.reward}
+                      onChange={e => updateStarRule(rule.key, { reward: Number(e.target.value) })}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-amber-700 focus:ring-2 focus:ring-amber-400 outline-none transition-all"
+                    />
+
+                    <p className="text-[11px] text-slate-500 mt-2.5 leading-snug">
+                      นักเรียน{rule.key === 'exam100' ? 'ทำข้อสอบได้' : 'ต้องทำครบ'}{' '}
+                      <b className="text-slate-700">{rule.target}{rule.key === 'exam100' ? '%' : ` ${rule.key === 'lessons3' ? 'บทเรียน' : 'ใบงาน'}`}</b>{' '}
+                      → รับ <b className="text-amber-600">+{rule.reward}⭐</b>
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[11px] text-slate-400 mt-3">
+                ℹ️ การเปลี่ยนเงื่อนไขมีผลกับนักเรียนที่ยังไม่ได้รับดาวข้อนั้น — คนที่ได้ไปแล้วจะไม่ถูกเรียกเก็บคืน
+              </p>
             </div>
 
             {/* Mission Cards Grid */}

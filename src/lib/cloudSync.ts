@@ -43,6 +43,7 @@ export const SYNCED_KEYS: string[] = [
   'scitech_daily_missions',
   'scitech_mission_completions',
   'scitech_star_awards',
+  'scitech_star_conditions',
   'scitech_quiz_history',
   'scitech_lesson_progress',
   'onet_bank_data_v1',
