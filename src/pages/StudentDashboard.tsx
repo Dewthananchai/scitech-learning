@@ -98,6 +98,22 @@ export default function StudentDashboard() {
     return myCalendarEvents.some(e => e.date === dateStr || (e.end_date && dateStr >= e.date && dateStr <= e.end_date));
   };
 
+  /** สีของวันในปฏิทินย่อ — ใช้สีจริงของกิจกรรมในวันนั้น (แยกตามประเภท)
+   *  หลายกิจกรรมในวันเดียว → ใช้สีของกิจกรรมแรก + ขอบรุ้งเพื่อบอกว่ามีหลายอย่าง */
+  const CAL_TYPE_FALLBACK: Record<string, string> = {
+    lesson: '#3b82f6', exam: '#ef4444', holiday: '#10b981', assignment: '#f59e0b', event: '#8b5cf6',
+  };
+  const eventsOnDay = (day: number) => {
+    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return myCalendarEvents.filter(e => e.date === dateStr || (e.end_date && dateStr >= e.date && dateStr <= e.end_date));
+  };
+  const dayColor = (day: number): string | null => {
+    const evs = eventsOnDay(day);
+    if (evs.length === 0) return null;
+    return evs[0].color || CAL_TYPE_FALLBACK[evs[0].type] || '#8b5cf6';
+  };
+  const isMultiEventDay = (day: number) => eventsOnDay(day).length > 1;
+
   // เซลล์ปฏิทิน: ช่องว่างหน้าแรก + วันที่ 1..สิ้นเดือน (โชว์ไม่เกิน 5 แถว = 35 ช่อง)
   const calendarCells = useMemo(() => {
     const cells: { d: number | null; ev: boolean }[] = [];
@@ -359,18 +375,27 @@ export default function StudentDashboard() {
                   <div key={d} className="text-center text-[9px] font-bold text-violet-400">{d}</div>
                 ))}
               </div>
-              {/* Dates — วันที่มีกิจกรรมจริงไฮไลต์ */}
+              {/* Dates — วันที่มีกิจกรรมไฮไลต์ด้วยสีของกิจกรรมนั้น (แยกตามประเภท) */}
               <div className="grid grid-cols-7 gap-0.5">
-                {calendarCells.map((cell, i) => (
-                  <div
-                    key={i}
-                    className={`text-center text-[10px] font-bold leading-5 w-5 h-5 mx-auto rounded-full ${
-                      cell.ev ? 'bg-violet-500 text-white' : cell.d ? 'text-slate-600' : ''
-                    }`}
-                  >
-                    {cell.d ?? ''}
-                  </div>
-                ))}
+                {calendarCells.map((cell, i) => {
+                  const color = cell.d ? dayColor(cell.d) : null;
+                  const multi = cell.d ? isMultiEventDay(cell.d) : false;
+                  return (
+                    <div
+                      key={i}
+                      className={`text-center text-[10px] font-bold leading-5 w-5 h-5 mx-auto rounded-full ${
+                        color ? 'text-white shadow-xs' : cell.d === todayDate.getDate() ? 'bg-slate-900 text-white' : cell.d ? 'text-slate-600' : ''
+                      }`}
+                      style={color ? {
+                        backgroundColor: color,
+                        ...(multi ? { boxShadow: `inset 0 0 0 1.5px white, 0 0 0 1.5px ${color}` } : {}),
+                      } : undefined}
+                      title={cell.d && color ? eventsOnDay(cell.d).map(e => `${CAL_TYPE_ICONS[e.type] || '🎉'} ${e.title}`).join('\n') : undefined}
+                    >
+                      {cell.d ?? ''}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -380,13 +405,26 @@ export default function StudentDashboard() {
                 <div className="p-2 bg-slate-50 rounded-xl text-center">
                   <span className="text-xs text-slate-400 font-medium">ยังไม่มีกิจกรรมที่จะถึง</span>
                 </div>
-              ) : upcomingMyEvents.map(ev => (
-                <div key={ev.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl">
-                  <span className="text-base">{CAL_TYPE_ICONS[ev.type] || '🎉'}</span>
-                  <span className="text-xs font-bold text-slate-700 flex-1 truncate">{ev.title}</span>
-                  <span className="text-[10px] font-extrabold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-lg shrink-0">{formatEventDate(ev.date)}</span>
-                </div>
-              ))}
+              ) : upcomingMyEvents.map(ev => {
+                const evColor = ev.color || CAL_TYPE_FALLBACK[ev.type] || '#8b5cf6';
+                return (
+                  <div key={ev.id} className="flex items-center gap-2 p-2 rounded-xl" style={{ backgroundColor: evColor + '14' }}>
+                    <span
+                      className="w-6 h-6 rounded-lg flex items-center justify-center text-sm shrink-0"
+                      style={{ backgroundColor: evColor + '30' }}
+                    >
+                      {CAL_TYPE_ICONS[ev.type] || '🎉'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-700 flex-1 truncate">{ev.title}</span>
+                    <span
+                      className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0"
+                      style={{ backgroundColor: evColor + '25', color: evColor }}
+                    >
+                      {formatEventDate(ev.date)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </Link>
 
