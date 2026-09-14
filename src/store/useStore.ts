@@ -147,6 +147,10 @@ function loadQuestions(): Question[] {
 export function useQuestions() {
   const [questions, setQuestions] = useState<Question[]>(loadQuestions);
 
+  // ครูนำเข้าข้อสอบบนเครื่องอื่น → คลาวด์ส่งมา → แดชบอร์ด/หน้าคลังอัปเดตทันที (ไม่ต้องรีโหลด)
+  useEffect(() => onCloudKeyChanged(KEYS.questions, () =>
+    setQuestions(loadQuestions())), []);
+
   useEffect(() => {
     saveToStorage(KEYS.questions, questions);
   }, [questions]);
@@ -860,6 +864,12 @@ export function useUsers() {
     // ไม่ merge mock users อีกต่อไป — ข้อมูลจริงเท่านั้น
     return stored;
   });
+
+  // ครูเพิ่ม/แก้ผู้ใช้บนเครื่องอื่น → คลาวด์ส่งมา → ทะเบียน/แดชบอร์ดอัปเดตทันที
+  useEffect(() => onCloudKeyChanged(KEYS_USERS, () => {
+    const fresh = loadFromStorage<AppUser[]>(KEYS_USERS, seedUsers);
+    if (Array.isArray(fresh) && fresh.length > 0) setUsers(fresh);
+  }), []);
 
   useEffect(() => {
     saveToStorage(KEYS_USERS, users);

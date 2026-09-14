@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useAppStore } from '../store/AppContext';
 import { useAuth } from '../store/AuthContext';
 import { useWorksheets, useUsers } from '../store/useStore';
+import { onCloudKeyChanged } from '../lib/cloudSync';
 import { getM1BankCount } from '../data/m1BankData';
 import { getOnetBankCount } from '../data/onetBankData';
 import AdminSidebar from '../components/AdminSidebar';
@@ -21,6 +22,13 @@ export default function AdminDashboard() {
     return users.filter(u => u.role === 'student' && u.is_active !== false).length;
   }, [users]);
 
+  // ข้อสอบ "ในชั้นเรียน" = เฉพาะ category lesson/ไม่ระบุ (ตัดข้อ onet/m1 เก่าที่เคยเก็บใน key เดียวกัน)
+  // — ต้องตรงกับฟิลเตอร์ของหน้า 📄 คลังข้อสอบ (AdminQuestions) เพื่อไม่ให้ตัวเลขต่างกัน
+  const lessonQuestionCount = useMemo(
+    () => questions.filter(q => !q.category || q.category === 'lesson').length,
+    [questions]
+  );
+
   // คลังข้อสอบทั้งหมด = ข้อสอบในชั้นเรียน + O-NET + ข้อสอบเข้า ม.1 (รีเฟรชเมื่อคลังถูกแก้)
   const [onetCount, setOnetCount] = useState(() => getOnetBankCount());
   const [m1Count, setM1Count] = useState(() => getM1BankCount());
@@ -28,6 +36,9 @@ export default function AdminDashboard() {
     const refresh = () => { setOnetCount(getOnetBankCount()); setM1Count(getM1BankCount()); };
     window.addEventListener('onet-bank-updated', refresh);
     window.addEventListener('m1-bank-updated', refresh);
+    // คลาวด์ดึงข้อมูลมาเขียน localStorage → นับใหม่ทันที (ไม่ต้องรอ focus/timeout)
+    const un1 = onCloudKeyChanged('onet_bank_data_v1', refresh);
+    const un2 = onCloudKeyChanged('m1_bank_data_v1', refresh);
     // ดึงข้อมูลล่าสุดจากคลาวด์อาจมาช้ากว่า mount — เช็คซ้ำหลังโหลด/โฟกัส
     const t1 = setTimeout(refresh, 1500);
     const t2 = setTimeout(refresh, 4000);
@@ -35,11 +46,12 @@ export default function AdminDashboard() {
     return () => {
       window.removeEventListener('onet-bank-updated', refresh);
       window.removeEventListener('m1-bank-updated', refresh);
+      un1(); un2();
       window.removeEventListener('focus', refresh);
       clearTimeout(t1); clearTimeout(t2);
     };
   }, []);
-  const totalExamQuestions = questions.length + onetCount + m1Count;
+  const totalExamQuestions = lessonQuestionCount + onetCount + m1Count;
 
   const stats = [
     {
@@ -70,7 +82,7 @@ export default function AdminDashboard() {
       accent: 'border-amber-200 hover:border-amber-400',
       iconBg: 'bg-amber-100 text-amber-700',
       textColor: 'text-amber-700',
-      sub: `ในชั้นเรียน ${questions.length} · O-NET ${onetCount} · ม.1 ${m1Count}`,
+      sub: `ในชั้นเรียน ${lessonQuestionCount} · O-NET ${onetCount} · ม.1 ${m1Count}`,
     },
     {
       label: 'นักเรียนในระบบ',
