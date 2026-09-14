@@ -71,6 +71,7 @@ export default function CreateLesson() {
     mediaType: 'none' as MediaType, mediaUrl: '', pdfFile: null as File | null,
     mediaItems: [] as LessonMedia[],
     content: '', objectives: '', criteria: '', isPublished: false,
+    difficulty: 1, estimatedMinutes: 15,
   });
 
   const updateField = (field: string, value: string | File | null | MediaType | boolean | number | LessonMedia[]) => {
@@ -203,8 +204,8 @@ export default function CreateLesson() {
       media_items: form.mediaItems.length > 0 ? form.mediaItems : undefined,
       media_type: form.mediaItems.length === 0 ? form.mediaType : undefined,
       media_url: form.mediaItems.length === 0 ? (form.mediaUrl || undefined) : undefined,
-      difficulty: 1,
-      estimated_minutes: 15,
+      difficulty: form.difficulty,
+      estimated_minutes: form.estimatedMinutes,
       is_published: publish,
     });
 
@@ -271,6 +272,16 @@ export default function CreateLesson() {
               <div className="md:col-span-2">
                 <label className="text-sm font-medium block mb-1">คำอธิบายบทเรียน</label>
                 <textarea value={form.description} onChange={e => updateField('description', e.target.value)} rows={3} placeholder="อธิบายเนื้อหาคร่าวๆ ของบทเรียนนี้" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"></textarea>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">ระดับความยาก</label>
+                <select value={form.difficulty} onChange={e => updateField('difficulty', Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none">
+                  <option value={1}>ง่าย</option><option value={2}>ปานกลาง</option><option value={3}>ยาก</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">เวลาเรียน (นาที)</label>
+                <input type="number" value={form.estimatedMinutes} onChange={e => updateField('estimatedMinutes', parseInt(e.target.value) || 15)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none" min="1" />
               </div>
             </div>
             <div className="mt-4">
@@ -574,6 +585,8 @@ export default function CreateLesson() {
                 <p>• ชื่อบทเรียน: <strong>{form.title || '-'}</strong></p>
                 <p>• ระดับชั้น: <strong>ป.{form.grade || '-'}</strong></p>
                 <p>• หน่วย: <strong>{subjects.find(s => String(s.id) === form.unit)?.unit_name || '-'}</strong></p>
+                <p>• ระดับความยาก: <strong>{form.difficulty === 1 ? 'ง่าย' : form.difficulty === 2 ? 'ปานกลาง' : 'ยาก'}</strong></p>
+                <p>• เวลาเรียน: <strong>{form.estimatedMinutes} นาที</strong></p>
                 <p>• สื่อ: <strong>{form.mediaType === 'none' ? 'ไม่มี' : form.mediaType === 'youtube' ? 'YouTube' : form.mediaType === 'pdf' ? 'PDF' : 'Google Drive'}</strong></p>
                 <p>• ข้อสอบ: <strong>{questions.length} ข้อ</strong></p>
                 <p>• สถานะ: <strong>{form.isPublished ? '🟢 เผยแพร่' : '🟡 ฉบับร่าง'}</strong></p>
