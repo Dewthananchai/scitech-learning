@@ -476,6 +476,7 @@ export default function StudentDashboard() {
             {!starPeriod.open && (
               <p className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-xl px-2.5 py-1.5 mb-1.5 text-center">
                 ⛔ {starPeriod.statusText}
+                {starPeriod.expired && ' — ความคืบหน้าเริ่มนับใหม่เมื่อครูเปิดรอบใหม่'}
               </p>
             )}
             {starPeriod.open && starPeriod.daysLeft !== null && (

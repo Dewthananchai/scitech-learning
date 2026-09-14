@@ -329,6 +329,7 @@ export default function StudentMissions() {
             starPeriod.open ? 'text-emerald-700 bg-emerald-50' : 'text-slate-500 bg-slate-100'
           }`}>
             {starPeriod.open ? '🟢' : '⛔'} {starPeriod.statusText}
+            {!starPeriod.open && ' — 📘เรียนบทเรียน · 📝ทำข้อสอบ · 📋ส่งใบงาน จะเริ่มนับใหม่เมื่อครูเปิดรอบสะสมรอบใหม่'}
           </p>
           <div className="space-y-2.5">
             {starConditions.map(c => (

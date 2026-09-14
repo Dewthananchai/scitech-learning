@@ -13,6 +13,10 @@
 
    การให้ดาว: เขียนลง scitech_star_awards (ซิงก์คลาวด์เหมือนข้อมูลอื่น)
    ดาวรวมที่หน้าจอแสดง = ดาวภารกิจ (scitech_mission_completions) + ดาวเงื่อนไขนี้
+
+   การรีเซ็ต / หมดเวลา: ครูกด "รีเซ็ตดาวนักเรียน" (หรือกำหนดเวลาสิ้นสุดลง) →
+   ดาวเงื่อนไขที่ได้ถูกล้าง และความคืบหน้า 3 เงื่อนไข (📘เรียนบทเรียน / 📝ทำข้อสอบ /
+   📋ส่งใบงาน) เริ่มนับใหม่จากศูนย์ — กิจกรรมที่ทำ "ก่อน" จุดรีเซ็ตจะไม่ถูกนับในรอบใหม่
    ============================================================ */
 
 export interface StarCondition {
@@ -33,7 +37,8 @@ export const DEFAULT_STAR_CONDITIONS: StarCondition[] = [
 
 /* ── การตั้งค่าเงื่อนไข (เก็บรวมกับ กำหนดเวลา) ──────────────────────────
    scitech_star_conditions เก็บออบเจ็กต์เดียว:
-     { conditions: StarCondition[], period_start?: string|null, period_end?: string|null }
+     { conditions: StarCondition[], period_start?: string|null, period_end?: string|null,
+       started_at?: string|null }
    - period_start/period_end เป็น 'YYYY-MM-DD' (ครูกำหนดช่วงเวลาที่สะสมดาวได้)
    - ช่วงไม่กำหนด = สะสมได้ตลอด                                */
 const CONDITIONS_KEY = 'scitech_star_conditions';
@@ -44,14 +49,17 @@ export interface StarConditionsSettings {
   period_start: string | null;
   /** วันสิ้นสุดช่วงสะสมดาว 'YYYY-MM-DD' หรือ null = ไม่มีวันปิด */
   period_end: string | null;
+  /** จุดเวลาเริ่ม "รอบการนับความคืบหน้า" (ISO) — null = นับกิจกรรมทั้งหมด
+   *  ครูกดรีเซ็ต → ประทับเวลาใหม่ ความคืบหน้าเก่าไม่ถูกนับอีก */
+  started_at?: string | null;
 }
 
 const DEFAULT_SETTINGS: StarConditionsSettings = {
   conditions: DEFAULT_STAR_CONDITIONS,
   period_start: null,
   period_end: null,
+  started_at: null,
 };
-
 /** กติกาปัจจุบัน — อ่านจาก scitech_star_conditions (ซิงก์คลาวด์ ทุกอุปกรณ์เห็นเหมือนกัน)
  *  ถ้าครูแก้เงื่อนไข ค่าที่เปลี่ยนจะมีผลกับนักเรียนที่ "ยังไม่ได้รางวัล" เท่านั้น */
 export function getStarConditionsSettings(): StarConditionsSettings {
@@ -69,6 +77,7 @@ export function getStarConditionsSettings(): StarConditionsSettings {
         }),
         period_start: null,
         period_end: null,
+        started_at: null,
       };
     }
     if (!saved || !Array.isArray(saved.conditions) || saved.conditions.length !== 3) return DEFAULT_SETTINGS;
@@ -83,6 +92,7 @@ export function getStarConditionsSettings(): StarConditionsSettings {
       }),
       period_start: norm(saved.period_start),
       period_end: norm(saved.period_end),
+      started_at: typeof saved.started_at === 'string' && saved.started_at ? saved.started_at : null,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -94,8 +104,10 @@ export function getStarConditions(): StarCondition[] {
   return getStarConditionsSettings().conditions;
 }
 
-/** บันทึกกติกา + กำหนดเวลา (ครูแก้จากหน้าจัดการภารกิจ) — sync layer อัปขึ้นคลาวด์เอง */
+/** บันทึกกติกา + กำหนดเวลา (ครูแก้จากหน้าจัดการภารกิจ) — sync layer อัปขึ้นคลาวด์เอง
+ *  ไม่ส่ง started_at → คง "รอบนับ" ปัจจุบันไว้ (ไม่รีเซ็ตความคืบหน้าโดยไม่ตั้งใจ) */
 export function setStarConditionsSettings(settings: StarConditionsSettings): void {
+  const cur = getStarConditionsSettings();
   const clean = {
     conditions: settings.conditions.map(r => ({
       ...r,
@@ -104,6 +116,7 @@ export function setStarConditionsSettings(settings: StarConditionsSettings): voi
     })),
     period_start: settings.period_start || null,
     period_end: settings.period_end || null,
+    started_at: settings.started_at !== undefined ? (settings.started_at || null) : (cur.started_at || null),
   };
   localStorage.setItem(CONDITIONS_KEY, JSON.stringify(clean));
 }
@@ -116,6 +129,16 @@ export function setStarConditions(conditions: StarCondition[]): void {
 /** รีเซ็ตกลับค่าเริ่มต้น */
 export function resetStarConditions(): void {
   localStorage.removeItem(CONDITIONS_KEY);
+}
+
+/** เริ่ม "รอบการนับความคืบหน้า" ใหม่ ณ เวลานี้ — กิจกรรมที่ทำก่อนหน้านี้จะไม่ถูกนับ
+ *  (ครูกดรีเซ็ตดาว → เรียนบทเรียน/ทำข้อสอบ/ส่งใบงาน เริ่มนับใหม่จากศูนย์)
+ *  คืนเวลาที่ประทับ (ISO) */
+export function beginStarRound(): string {
+  const started_at = new Date().toISOString();
+  const cur = getStarConditionsSettings();
+  setStarConditionsSettings({ ...cur, started_at });
+  return started_at;
 }
 
 /* ── กำหนดเวลาการสะสมดาว ─────────────────────────────────────────── */
@@ -133,6 +156,8 @@ export interface StarPeriodInfo {
   statusText: string;
   /** จำนวนวันที่เหลือ (ถ้ามีวันปิด) */
   daysLeft: number | null;
+  /** กำหนดเวลา "จบลงแล้ว" หรือยัง (ปีจจุบันหลัง period_end) */
+  expired: boolean;
 }
 
 /** ข้อมูลช่วงเวลาสะสมดาวปัจจุบัน + เปิด/ปิดอยู่หรือไม่ */
@@ -141,6 +166,7 @@ export function getStarPeriodInfo(): StarPeriodInfo {
   const today = todayLocalISO();
   const startOK = !period_start || today >= period_start;
   const endOK = !period_end || today <= period_end;
+  const expired = !!period_end && today > period_end;
   let daysLeft: number | null = null;
   if (period_end) daysLeft = Math.max(0, Math.round((new Date(period_end).getTime() - new Date(today).getTime()) / 86400000));
   let statusText: string;
@@ -151,7 +177,52 @@ export function getStarPeriodInfo(): StarPeriodInfo {
   } else {
     statusText = `ปิดสะสมแล้ว (จบเมื่อ ${period_end})`;
   }
-  return { start: period_start, end: period_end, open: startOK && endOK, statusText, daysLeft };
+  return { start: period_start, end: period_end, open: startOK && endOK, statusText, daysLeft, expired };
+}
+
+/** เวลาเริ่ม "รอบนับความคืบหน้า" (ISO) — กิจกรรมที่เกิดก่อนหน้านี้ไม่ถูกนับ
+ *  เอาค่าล่าสุดจาก 3 จุด:
+ *   1) settings.started_at      — ครูกด "รีเซ็ตดาวนักเรียน" (beginStarRound ประทับ)
+ *   2) เที่ยงคืนวัน period_start — ครูเปิดกำหนดเวลาใหม่ → รอบนับเริ่มที่วันเริ่ม
+ *   3) เที่ยงคืนถัดจาก period_end — กำหนดเวลาหมดลง → รอบใหม่เริ่มอัตโนมัติ
+ *  ไม่มีจุดใดเลย (null) = นับทุกกิจกรรม */
+function getRoundStart(): string | null {
+  const s = getStarConditionsSettings();
+  let latest: string | null = s.started_at || null;
+  const isoOf = (d: Date) => (Number.isNaN(d.getTime()) ? null : d.toISOString());
+  if (s.period_start) {
+    const iso = isoOf(new Date(`${s.period_start}T00:00:00`));
+    if (iso && (!latest || iso > latest)) latest = iso;
+  }
+  if (s.period_end) {
+    const endMs = new Date(`${s.period_end}T00:00:00`).getTime();
+    if (!Number.isNaN(endMs) && Date.now() > endMs + 86400000) { // หมดเวลาแล้ว
+      const iso = isoOf(new Date(endMs + 86400000));
+      if (iso && (!latest || iso > latest)) latest = iso;
+    }
+  }
+  return latest;
+}
+
+/** เวลา (ISO) มากกว่า/เท่ากับ จุดเริ่มรอบหรือไม่
+ *  • ไม่มีจุดเริ่มรอบ (roundStart = null) → นับทุกรายการ
+ *  • มีจุดเริ่มรอบแต่รายการไม่มีเวลา → ไม่นับ (เผื่อความถูกต้องของรอบ)
+ *  รองรับ timestamp 2 รูปแบบ: ISO และ "dd/mm/yyyy, hh:mm" แบบ th-TH */
+function afterRoundStart(ts: string | undefined | null, roundStart: string | null): boolean {
+  if (!roundStart) return true; // ไม่มีรอบเก่า → นับหมด
+  if (!ts) return false; // มีจุดเริ่มรอบ แต่รายการไม่มีเวลา → ถือว่าเก่า
+  const startMs = new Date(roundStart).getTime();
+  if (Number.isNaN(startMs)) return true;
+  const th = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[\s,]+(\d{1,2}):(\d{2})/.exec(ts);
+  if (th) {
+    // รูปแบบ th-TH dd/mm/yyyy, hh:mm (ปี พ.ศ.) — Date ไม่ parse เอง เขียนแบบชัด ๆ
+    const yearBE = Number(th[3]);
+    const ms = new Date(yearBE > 2000 ? yearBE - 543 : yearBE, Number(th[2]) - 1, Number(th[1]), Number(th[4]), Number(th[5])).getTime();
+    if (!Number.isNaN(ms)) return ms >= startMs;
+  }
+  const ms = new Date(ts).getTime();
+  if (Number.isNaN(ms)) return true; // ไม่เข้าใจรูปแบบ → เผื่อไว้ (ไม่ตัดทิ้ง)
+  return ms >= startMs;
 }
 
 /** ผลรวมดาวสูงสุดตามกติกาปัจจุบัน (อ่านสด — อย่าแคชค่านี้ในโมดูล) */
@@ -191,58 +262,69 @@ export interface StarProgress {
 }
 
 export function getStarProgress(studentId: number): StarProgress {
+  // จุดเริ่มรอบนับ — กิจกรรมที่เกิดก่อนหน้านี้ (รอบเก่า/ถูกรีเซ็ต/หมดเวลา) ไม่ถูกนับ
+  const roundStart = getRoundStart();
+
   // 1) บทเรียนที่เรียนจบ (เซสชันสถานะ completed — ตัวเดียวกับหน้าแดชบอร์ด/บทเรียน)
+  //    นับเฉพาะที่จบ "หลังจุดเริ่มรอบ" → รีเซ็ตแล้วเริ่มนับใหม่จากศูนย์
   let lessonsCompleted = 0;
   try {
-    const sessions: Array<{ student_id: number; status?: string }> =
+    const sessions: Array<{ student_id: number; status?: string; completed_at?: string }> =
       JSON.parse(localStorage.getItem('scitech_lesson_sessions') || '[]');
     lessonsCompleted = sessions.filter(
       s => s.student_id === studentId && s.status === 'completed'
+        && afterRoundStart(s.completed_at, roundStart)
     ).length;
   } catch { /* ไม่มีข้อมูล */ }
 
-  // 2) ข้อสอบผ่าน 100% — เช็คทุกแหล่งประวัติ
+  // 2) ข้อสอบผ่านเป้า (คะแนนสูงสุด) — เช็คทุกแหล่งประวัติ เฉพาะที่สอบ "หลังจุดเริ่มรอบ"
   let bestExamPercent = 0;
   try {
     // 2a) ข้อสอบบทเรียน (QuizPage บันทึกลง scitech_quiz_history)
-    const quizHist: Array<{ student_id: number; score?: number }> =
+    const quizHist: Array<{ student_id: number; score?: number; completed_at?: string }> =
       JSON.parse(localStorage.getItem('scitech_quiz_history') || '[]');
     bestExamPercent = Math.max(
       bestExamPercent,
-      ...quizHist.filter(h => h.student_id === studentId).map(h => Number(h.score) || 0),
+      ...quizHist.filter(h => h.student_id === studentId && afterRoundStart(h.completed_at, roundStart))
+        .map(h => Number(h.score) || 0),
       0
     );
   } catch { /* ignore */ }
   try {
-    // 2b) ข้อสอบ O-NET และเข้า ม.1 (ประวัติรวม — เก็บต่อเครื่อง ไม่มี student_id)
+    // 2b) ข้อสอบ O-NET และเข้า ม.1 — ระเบียนมี student_id หลัง 2569-09-13 เท่านั้น
+    //     (ระเบียนเก่าไม่มี student_id → ไม่นับ เพื่อไม่ให้ตัวเลขข้ามบัญชี)
     for (const key of ['onet_exam_history_v1', 'm1_exam_history_v1']) {
-      const hist: Array<{ percentage?: number; student_id?: number }> =
+      const hist: Array<{ percentage?: number; student_id?: number; created_at?: string }> =
         JSON.parse(localStorage.getItem(key) || '[]');
       bestExamPercent = Math.max(
         bestExamPercent,
-        ...hist.filter(h => h.student_id === undefined || h.student_id === studentId)
+        ...hist.filter(h => h.student_id === studentId && afterRoundStart(h.created_at, roundStart))
           .map(h => Number(h.percentage) || 0),
         0
       );
     }
     // ประวัติต่อผู้ใช้ (histKey = scitech_onet_history_<id> / scitech_m1_history_<id>)
     for (const key of [`scitech_onet_history_${studentId}`, `scitech_m1_history_${studentId}`]) {
-      const hist: Array<{ percentage?: number }> = JSON.parse(localStorage.getItem(key) || '[]');
+      const hist: Array<{ percentage?: number; date?: string }> = JSON.parse(localStorage.getItem(key) || '[]');
       bestExamPercent = Math.max(
         bestExamPercent,
-        ...hist.map(h => Number(h.percentage) || 0),
+        ...hist.filter(h => afterRoundStart(h.date, roundStart)).map(h => Number(h.percentage) || 0),
         0
       );
     }
   } catch { /* ignore */ }
 
   // 3) ใบงานที่ส่ง (นับใบที่ส่งแล้ว — สถานะ submitted หรือ graded)
+  //    นับเฉพาะที่ส่ง "หลังจุดเริ่มรอบ" → รีเซ็ตแล้วเริ่มนับใหม่จากศูนย์
   let worksheetsSubmitted = 0;
   try {
-    const subs: Array<{ student_id: number; worksheet_id: number; status?: string }> =
+    const subs: Array<{ student_id: number; worksheet_id: number; status?: string; submitted_at?: string }> =
       JSON.parse(localStorage.getItem('scitech_worksheet_submissions') || '[]');
     worksheetsSubmitted = new Set(
-      subs.filter(s => s.student_id === studentId).map(s => s.worksheet_id)
+      subs.filter(s => s.student_id === studentId
+        && (!s.status || s.status === 'submitted' || s.status === 'graded')
+        && afterRoundStart(s.submitted_at, roundStart))
+        .map(s => s.worksheet_id)
     ).size;
   } catch { /* ไม่มีข้อมูล */ }
 

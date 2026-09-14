@@ -12,6 +12,7 @@ import {
   setStarConditionsSettings,
   resetStarConditions,
   resetStarAwards,
+  beginStarRound,
   countAllStarAwards,
   getStarPeriodInfo,
   starConditionsTotal,
@@ -77,7 +78,7 @@ export default function AdminMissions() {
     const end = periodEnd || null;
     if (!start && end) start = new Date().toISOString().slice(0, 10);
     if (start && end && start > end) { alert('วันเริ่มต้องไม่หลังวันสิ้นสุด'); return; }
-    setStarConditionsSettings({ conditions: clean, period_start: start, period_end: end });
+    setStarConditionsSettings({ conditions: clean, period_start: start, period_end: end, started_at: undefined });
     setStarRules(clean);
     setPeriodStart(start || '');
     setPeriodEnd(end || '');
@@ -97,8 +98,9 @@ export default function AdminMissions() {
   };
   const [awardsCount, setAwardsCount] = useState(() => countAllStarAwards());
   const handleResetStarAwards = () => {
-    if (!confirm('รีเซ็ตดาวเงื่อนไขของนักเรียนทุกคนเป็น 0?\n(นักเรียนเริ่มสะสมใหม่ตั้งแต่ 0 — ดาวภารกิจรายวันไม่ถูกลบ)')) return;
+    if (!confirm('รีเซ็ตดาวเงื่อนไขของนักเรียนทุกคนเป็น 0?\n(ดาวเงื่อนไขทุกดวงถูกล้าง — ความคืบหน้า 📘เรียนบทเรียน · 📝ทำข้อสอบ · 📋ส่งใบงาน\nเริ่มนับใหม่จากศูนย์ นับเฉพาะกิจกรรมหลังจากนี้ — ดาวภารกิจรายวันไม่ถูกลบ)')) return;
     resetStarAwards();
+    beginStarRound(); // ประทับจุดเริ่มรอบนับใหม่ → ความคืบหน้าเก่าไม่ถูกนับอีก
     setAwardsCount(0);
   };
   const periodNow = getStarPeriodInfo();
