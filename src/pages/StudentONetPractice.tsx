@@ -609,7 +609,7 @@ export default function StudentONetPractice() {
                     </div>
 
                     {/* Question Text */}
-                    <MathText as="h2" className="text-lg md:text-xl font-black text-slate-800 leading-relaxed whitespace-pre-line">
+                    <MathText as="h2" className="text-lg md:text-xl font-normal text-slate-800 leading-relaxed whitespace-pre-line">
                       {q.q}
                     </MathText>
 
@@ -636,7 +636,7 @@ export default function StudentONetPractice() {
                               if (locked) return; // โหมดทีละข้อ: เฉลยแล้ว ห้ามเปลี่ยนคำตอบ
                               setUserAnswers(prev => ({ ...prev, [currentQIndex]: cIdx }));
                             }}
-                            className={`w-full p-4 rounded-2xl font-bold text-left border-2 transition flex items-start gap-3.5 ${
+                            className={`w-full p-4 rounded-2xl font-normal text-left border-2 transition flex items-start gap-3.5 ${
                               isAnswer
                                 ? 'bg-emerald-500 text-white border-emerald-600 shadow-md'
                                 : isWrongPick
@@ -813,25 +813,25 @@ export default function StudentONetPractice() {
                           }`}>
                             {idx + 1}
                           </span>
-                          <span className={`font-black text-sm ${isCorrect ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          <span className={`font-normal text-sm ${isCorrect ? 'text-emerald-700' : 'text-rose-700'}`}>
                             {isCorrect ? '✅ ตอบถูกต้อง' : '❌ ตอบผิด'}
                           </span>
                         </div>
 
-                        <MathText as="p" className="font-bold text-slate-800 mb-4 whitespace-pre-line">{q.q}</MathText>
+                        <MathText as="p" className="font-normal text-slate-800 mb-4 whitespace-pre-line">{q.q}</MathText>
 
-                        <div className="space-y-2 text-sm font-medium">
+                        <div className="space-y-2 text-sm font-normal">
                           {q.choices.map((c, ci) => {
                             let choiceCls = 'bg-white text-slate-600 border-slate-200';
                             if (ci === q.answer) {
-                              choiceCls = 'bg-emerald-500 text-white border-emerald-600 font-bold';
+                              choiceCls = 'bg-emerald-500 text-white border-emerald-600';
                             } else if (ci === userAns && !isCorrect) {
-                              choiceCls = 'bg-rose-500 text-white border-rose-600 font-bold';
+                              choiceCls = 'bg-rose-500 text-white border-rose-600';
                             }
 
                             return (
                               <div key={ci} className={`p-3 rounded-2xl border flex items-center gap-2 ${choiceCls}`}>
-                                <span className="font-black">{String.fromCharCode(65 + ci)}.</span>
+                                <span className="font-normal">{String.fromCharCode(65 + ci)}.</span>
                                 <span>{c}</span>
                                 {ci === q.answer && <span className="ml-auto text-xs font-black">✓ เฉลย</span>}
                                 {ci === userAns && ci !== q.answer && <span className="ml-auto text-xs font-black">✗ คำตอบของคุณ</span>}

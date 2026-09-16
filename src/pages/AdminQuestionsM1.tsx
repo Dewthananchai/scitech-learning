@@ -62,7 +62,8 @@ const parseAnswerIndex = (raw: string): number => {
 
 /* ขึ้นบรรทัดใหม่: ใน CSV พิมพ์ \\n เพื่อขึ้นบรรทัดใหม่ เช่น "ข้อความ\\nบรรทัดสอง"
    (ไม่แตะต้อง \\neq \\nu ฯลฯ — คำสั่ง LaTeX ที่ขึ้นต้นด้วย \\n ตามด้วยตัวอักษร) */
-const unescNewlines = (s: string) => String(s).replace(/\\n(?![a-zA-Z])/g, '\n');
+// \n เก็บใน CSV = ขึ้นบรรทัดใหม่จริง — ยกเว้นคำสั่ง LaTeX ที่ขึ้นต้นด้วย \n เท่านั้น (เช่น \neq, \nabla)
+const unescNewlines = (s: string) => String(s).replace(/\\n(?!(?:eq|e|abla|ot|otin|mid|subseteq|supseteq|exists|ewline|onumber|oindent|ewpage|ormalsize|atural|angle|ear|ext)(?![a-zA-Z]))/g, '\n');
 const escNewlines = (s: string) => String(s).replace(/\n/g, '\\n');
 
 /* ---------- component ---------- */
@@ -812,7 +813,7 @@ export function M1BankContent() {
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">❓ คำถาม</label>
               <textarea
-                rows={2}
+                rows={5}
                 value={editForm.q}
                 onChange={(e) => setEditForm(prev => ({ ...prev, q: e.target.value }))}
                 className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
@@ -875,7 +876,7 @@ export function M1BankContent() {
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">💡 คำอธิบายเฉลย</label>
               <textarea
-                rows={2}
+                rows={5}
                 value={editForm.explain}
                 onChange={(e) => setEditForm(prev => ({ ...prev, explain: e.target.value }))}
                 className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-500/30"
