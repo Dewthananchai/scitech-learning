@@ -35,6 +35,7 @@ export default function StudentONetPractice() {
   const [selectedSet, setSelectedSet] = useState<string>('all');
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [isTimer, setIsTimer] = useState<boolean>(true);
+  const [stepByStep, setStepByStep] = useState<boolean>(false); // 📖 โหมดทำทีละข้อ แล้วเฉลย
 
   // Modal State
   const [activeModal, setActiveModal] = useState<'none' | 'stats' | 'leaderboard'>('none');
@@ -144,7 +145,7 @@ export default function StudentONetPractice() {
   const getYearLabel = () => selectedYear === 'all' ? 'สุ่มทุกปี' : `ปี ${selectedYear}`;
   const getSetLabel = () => selectedSet === 'all' ? 'สุ่มทุกชุด' : `ชุดที่ ${selectedSet}`;
 
-  const liveSummaryText = `${getLevelLabel()} / ${getSubjectLabel()} / ${getYearLabel()} / ${getSetLabel()} / ${questionCount} ข้อ / ${isTimer ? 'จับเวลา' : 'ไม่จับเวลา'}`;
+  const liveSummaryText = `${getLevelLabel()} / ${getSubjectLabel()} / ${getYearLabel()} / ${getSetLabel()} / ${questionCount} ข้อ / ${stepByStep ? 'ทำทีละข้อ แล้วเฉลย' : isTimer ? 'จับเวลา' : 'ไม่จับเวลา'}`;
 
   // Start Exam Action
   const handleStartExam = () => {
@@ -165,7 +166,7 @@ export default function StudentONetPractice() {
     setUserAnswers({});
     setCurrentQIndex(0);
 
-    if (isTimer) {
+    if (isTimer && !stepByStep) {
       setTimeLeft(selectedQ.length * 120); // 2 นาทีต่อข้อ
     } else {
       setTimeLeft(0);
@@ -185,7 +186,8 @@ export default function StudentONetPractice() {
     });
 
     // หากยังตอบไม่ครบ และไม่ได้หมดเวลา จะแจ้งเตือนและย้ายไปยังข้อแรกที่ยังไม่ได้ตอบ
-    if (unansweredIndices.length > 0 && !isTimeOut) {
+    // (โหมดทีละข้อ: บังคับตอบทีละข้ออยู่แล้ว จึงข้ามการเช็ค)
+    if (unansweredIndices.length > 0 && !isTimeOut && !stepByStep) {
       const firstUnansweredIndex = unansweredIndices[0] - 1;
       alert(`คุณยังไม่ได้ตอบข้อ ${unansweredIndices.join(', ')} กรุณาทำข้อสอบให้ครบทุกข้อก่อนส่งคำตอบครับ`);
       setCurrentQIndex(firstUnansweredIndex);
@@ -220,11 +222,11 @@ export default function StudentONetPractice() {
     saveHistoryEntry(entry);
     if (user) awardStars(user.id); // 🎯 เช็คเงื่อนไขดาว (ข้อสอบ 100% +5⭐)
     setExamState('result');
-  }, [examQuestions, userAnswers, liveSummaryText, getSubjectLabel, isTimer, saveHistoryEntry]);
+  }, [examQuestions, userAnswers, liveSummaryText, getSubjectLabel, isTimer, stepByStep, saveHistoryEntry]);
 
   // Timer Effect
   useEffect(() => {
-    if (examState !== 'testing' || !isTimer) return;
+    if (examState !== 'testing' || !isTimer || stepByStep) return;
 
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
@@ -240,7 +242,7 @@ export default function StudentONetPractice() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [examState, isTimer, handleFinishExam]);
+  }, [examState, isTimer, stepByStep, handleFinishExam]);
 
   const getBadge = (pct: number) => pct >= 90 ? '🏆' : pct >= 70 ? '🥇' : pct >= 50 ? '🥈' : '📖';
   const getComment = (pct: number) => {
@@ -458,17 +460,17 @@ export default function StudentONetPractice() {
                     />
                   </div>
 
-                  {/* โหมดจับเวลา */}
+                  {/* โหมดการสอบ */}
                   <div>
                     <span className="text-xs font-black text-slate-400 uppercase ml-2 mb-2 block">
                       โหมดการสอบ
                     </span>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-2 md:gap-4">
                       <button
                         type="button"
-                        onClick={() => setIsTimer(true)}
-                        className={`py-4 rounded-2xl font-black border-2 transition ${
-                          isTimer
+                        onClick={() => { setStepByStep(false); setIsTimer(true); }}
+                        className={`py-4 px-1 rounded-2xl font-black border-2 transition text-xs md:text-base ${
+                          !stepByStep && isTimer
                             ? 'bg-purple-600 text-white border-purple-700 shadow-md'
                             : 'bg-slate-100 text-slate-600 border-slate-200'
                         }`}
@@ -477,14 +479,25 @@ export default function StudentONetPractice() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setIsTimer(false)}
-                        className={`py-4 rounded-2xl font-black border-2 transition ${
-                          !isTimer
+                        onClick={() => { setStepByStep(false); setIsTimer(false); }}
+                        className={`py-4 px-1 rounded-2xl font-black border-2 transition text-xs md:text-base ${
+                          !stepByStep && !isTimer
                             ? 'bg-purple-600 text-white border-purple-700 shadow-md'
                             : 'bg-slate-100 text-slate-600 border-slate-200'
                         }`}
                       >
                         🎯 ไม่จับเวลา
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStepByStep(true)}
+                        className={`py-4 px-1 rounded-2xl font-black border-2 transition text-xs md:text-base ${
+                          stepByStep
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-md'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        📖 ทำทีละข้อ แล้วเฉลย
                       </button>
                     </div>
                   </div>
@@ -528,7 +541,11 @@ export default function StudentONetPractice() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {isTimer ? (
+                  {stepByStep ? (
+                    <div className="px-4 py-2 bg-amber-100 text-amber-700 rounded-2xl font-black text-sm">
+                      📖 ทำทีละข้อ แล้วเฉลย
+                    </div>
+                  ) : isTimer ? (
                     <div className={`px-4 py-2 rounded-2xl font-black text-lg ${
                       timeLeft <= 60 ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-purple-100 text-purple-700'
                     }`}>
@@ -607,31 +624,64 @@ export default function StudentONetPractice() {
                     <div className="space-y-3 pt-2">
                       {q.choices.map((choice, cIdx) => {
                         const isSelected = selectedChoice === cIdx;
+                        const locked = stepByStep && selectedChoice !== undefined;
+                        const revealed = stepByStep && selectedChoice !== undefined;
+                        const isAnswer = revealed && cIdx === q.answer;
+                        const isWrongPick = revealed && isSelected && cIdx !== q.answer;
                         return (
                           <button
                             key={cIdx}
                             type="button"
                             onClick={() => {
+                              if (locked) return; // โหมดทีละข้อ: เฉลยแล้ว ห้ามเปลี่ยนคำตอบ
                               setUserAnswers(prev => ({ ...prev, [currentQIndex]: cIdx }));
                             }}
                             className={`w-full p-4 rounded-2xl font-bold text-left border-2 transition flex items-start gap-3.5 ${
-                              isSelected
+                              isAnswer
+                                ? 'bg-emerald-500 text-white border-emerald-600 shadow-md'
+                                : isWrongPick
+                                ? 'bg-rose-500 text-white border-rose-600 shadow-md'
+                                : isSelected
                                 ? 'bg-blue-500 text-white border-blue-600 shadow-md translate-x-1'
                                 : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-sky-50 hover:border-sky-300'
-                            }`}
+                            } ${locked ? 'cursor-default' : ''}`}
                           >
                             <span className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${
-                              isSelected ? 'bg-white text-blue-600' : 'bg-slate-200 text-slate-600'
+                              isAnswer ? 'bg-white text-emerald-600'
+                              : isWrongPick ? 'bg-white text-rose-600'
+                              : isSelected ? 'bg-white text-blue-600' : 'bg-slate-200 text-slate-600'
                             }`}>
                               {String.fromCharCode(65 + cIdx)}
                             </span>
                             <MathText className="pt-1 leading-normal text-sm md:text-base flex-1 whitespace-pre-line">
                               {choice}
                             </MathText>
+                            {isAnswer && <span className="ml-auto text-xs font-black shrink-0 self-center">✓ เฉลย</span>}
+                            {isWrongPick && <span className="ml-auto text-xs font-black shrink-0 self-center">✗ คำตอบของคุณ</span>}
                           </button>
                         );
                       })}
                     </div>
+
+                    {/* 📖 โหมดทำทีละข้อ: แสดงเฉลย + คำอธิบายทันทีที่ตอบ */}
+                    {stepByStep && selectedChoice !== undefined && (
+                      <div className="space-y-4">
+                        <div className={`p-4 rounded-2xl font-black text-center text-white ${
+                          selectedChoice === q.answer ? 'bg-emerald-500' : 'bg-rose-500'
+                        }`}>
+                          {selectedChoice === q.answer ? '🎉 ถูกต้อง! เก่งมาก' : '❌ ไม่ถูกนะ ลองดูเฉลยด้านบน'}
+                        </div>
+                        {(q.explain || q.explain_image) && (
+                          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-sm text-amber-900 leading-relaxed">
+                            💡 <strong>คำอธิบาย:</strong>
+                            {q.explain && <MathText className="whitespace-pre-line">{q.explain}</MathText>}
+                            {q.explain_image && (
+                              <img src={q.explain_image} alt="รูปอธิบาย" className="mt-2 max-h-48 rounded-lg border border-amber-300" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -647,14 +697,14 @@ export default function StudentONetPractice() {
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => setCurrentQIndex(idx)}
+                        onClick={() => { if (stepByStep && idx !== currentQIndex) return; setCurrentQIndex(idx); }}
                         className={`w-10 h-10 rounded-xl font-bold text-xs transition border-2 ${
                           isCurrent
                             ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-300'
                             : isAnswered
                             ? 'bg-emerald-500 text-white border-emerald-600'
                             : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                        }`}
+                        } ${stepByStep && !isCurrent ? 'opacity-50' : ''}`}
                       >
                         {idx + 1}
                       </button>
@@ -666,7 +716,7 @@ export default function StudentONetPractice() {
                 <div className="flex items-center justify-between gap-4 pt-2">
                   <button
                     type="button"
-                    disabled={currentQIndex === 0}
+                    disabled={currentQIndex === 0 || (stepByStep && userAnswers[currentQIndex] === undefined)}
                     onClick={() => setCurrentQIndex(prev => prev - 1)}
                     className="px-5 py-3 bg-slate-100 text-slate-700 rounded-2xl font-black text-sm hover:bg-slate-200 disabled:opacity-40 transition"
                   >
@@ -676,8 +726,9 @@ export default function StudentONetPractice() {
                   {currentQIndex < examQuestions.length - 1 ? (
                     <button
                       type="button"
+                      disabled={stepByStep && userAnswers[currentQIndex] === undefined}
                       onClick={() => setCurrentQIndex(prev => prev + 1)}
-                      className="px-6 py-3 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-600 transition shadow-md"
+                      className="px-6 py-3 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-600 disabled:opacity-40 transition shadow-md"
                     >
                       ข้อถัดไป ➡️
                     </button>
