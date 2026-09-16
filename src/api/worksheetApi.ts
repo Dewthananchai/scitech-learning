@@ -47,6 +47,15 @@ export const worksheetApi = {
     return { data: lsRead<import('../types').Worksheet[]>(LS_WORKSHEETS, []), fromServer: false };
   },
 
+  /** POST แบบไม่มี fallback — ใช้โดย polling เพื่อ "ลองส่งซ้ำ" ใบงานที่ค้างในเครื่อง
+   *  ตอนเซิร์ฟเวอร์ล่ม (คืน null เมื่อเซิร์ฟเวอร์ยังไม่ตอบ) */
+  async push(worksheet: Omit<import('../types').Worksheet, 'id'>): Promise<import('../types').Worksheet | null> {
+    return api<import('../types').Worksheet>('/worksheets', {
+      method: 'POST',
+      body: JSON.stringify(worksheet),
+    });
+  },
+
   async add(worksheet: Omit<import('../types').Worksheet, 'id'>): Promise<import('../types').Worksheet> {
     const created = await api<import('../types').Worksheet>('/worksheets', {
       method: 'POST',
@@ -86,15 +95,26 @@ export const submissionApi = {
     return { data: lsRead<import('../types').WorksheetSubmission[]>(LS_SUBMISSIONS, []), fromServer: false };
   },
 
+  /** POST แบบไม่มี fallback — polling ใช้ "ลองส่งซ้ำ" คำตอบที่ค้างในเครื่องตอนเซิร์ฟเวอร์ล่ม
+   *  (กันคำตอบนักเรียนหาย — เซิร์ฟเวอร์กลับมาเมื่อไรส่งขึ้นทันที) */
+  async push(submission: Omit<import('../types').WorksheetSubmission, 'id'>): Promise<import('../types').WorksheetSubmission | null> {
+    return api<import('../types').WorksheetSubmission>('/submissions', {
+      method: 'POST',
+      body: JSON.stringify(submission),
+    });
+  },
+
   async add(submission: Omit<import('../types').WorksheetSubmission, 'id'>): Promise<import('../types').WorksheetSubmission> {
     const created = await api<import('../types').WorksheetSubmission>('/submissions', {
       method: 'POST',
       body: JSON.stringify(submission),
     });
     if (created) return created;
+    // Fallback: mimic the old localStorage behaviour — mark _pending so the
+    // polling retry-push uploads it the moment the server is reachable again
     const list = lsRead<import('../types').WorksheetSubmission[]>(LS_SUBMISSIONS, []);
-    const nextId = list.reduce((m, s) => Math.max(m, s.id), 0) + 1;
-    const local = { ...submission, id: nextId };
+    const nextId = list.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
+    const local = { ...submission, id: nextId, _pending: true };
     lsWrite(LS_SUBMISSIONS, [local, ...list]);
     return local;
   },

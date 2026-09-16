@@ -145,7 +145,8 @@ export interface AttendanceSession {
 }
 
 export interface AttendanceRecord {
-  id: number;
+  /** uuid (ตาราง attendance_records) หรือตัวเลขเดิม (แถว legacy ก่อนย้าย) */
+  id: number | string;
   session_id: number;
   student_id: number;
   student_name: string;
@@ -249,7 +250,8 @@ export interface WorksheetAnswer {
 }
 
 export interface WorksheetSubmission {
-  id: number;
+  /** uuid (ตาราง worksheet_submissions) หรือตัวเลขเดิม (แถว legacy ก่อนย้าย) */
+  id: number | string;
   worksheet_id: number;
   student_id: number;
   answers: WorksheetAnswer[];
@@ -259,6 +261,8 @@ export interface WorksheetSubmission {
   total_score?: number;
   graded_at?: string;
   graded_by?: string;
+  /** true = ยังไม่ขึ้นเซิร์ฟเวอร์ (เซิร์ฟเวอร์ล่มตอนส่ง) — polling จะ push ซ้ำอัตโนมัติ */
+  _pending?: boolean;
 }
 
 export const GRADES: GradeInfo[] = [

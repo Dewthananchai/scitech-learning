@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Lesson, Question, Quiz, SubjectUnit, Announcement, CalendarEvent, AttendanceSession, AttendanceRecord, Mission, MissionCompletion, LessonProgress, DailyAutoMission, LessonSession, Worksheet, WorksheetSubmission } from '../types';
-import { worksheetApi, submissionApi } from '../api/worksheetApi';
+import { worksheetApi } from '../api/worksheetApi';
 
 // Storage keys
 const KEYS = {
@@ -11,6 +11,7 @@ const KEYS = {
 };
 
 import { onCloudKeyChanged } from '../lib/cloudSync';
+import { submissionRecords, attendanceRecords, cacheViews, onRecordsChanged } from '../api/recordApi';
 
 // Load from localStorage, fallback to mock data
 function loadFromStorage<T>(key: string, fallback: T): T {
@@ -32,23 +33,16 @@ function saveToStorage<T>(key: string, data: T): void {
   }
 }
 
-// Initial IDs for new items
-// Initial IDs for new items (ข้อมูลจริงเริ่มจากว่าง — ไม่มีตัวอย่าง/mock)
-// เริ่มจาก id ถัดไปของข้อมูลจริงในเครื่อง (หลัง hydrate จากคลาวด์) — กันสองเครื่อง
-// สร้าง id เดียวกันแล้วทับกันเองตอนซิงก์ (เครื่องที่เปิดหลังข้อมูลมีอยู่แล้ว)
-const nextIdFrom = (key: string): number => {
+// ===== ID generator (ข้อมูลจริงเริ่มจากว่าง — ไม่มีตัวอย่าง/mock) =====
+// คิด "id ถัดไป" ของข้อมูลจริงในเครื่องสด ๆ ทุกครั้งที่ใช้ (หลัง hydrate จากคลาวด์ด้วย)
+// — กันสองเครื่องสร้าง id เดียวกันแล้วทับกันเองตอนซิงก์ (เครื่องที่เปิดหลังข้อมูลมีอยู่แล้ว)
+const nextId = (key: string): number => {
   try {
     const arr = JSON.parse(localStorage.getItem(key) || '[]');
     if (Array.isArray(arr) && arr.length > 0) return Math.max(...arr.map((x: { id?: number }) => Number(x.id) || 0)) + 1;
   } catch { /* ข้อมูลพัง → เริ่ม 1 */ }
   return 1;
 };
-let nextSubjectId = nextIdFrom(KEYS.subjects);
-let nextLessonId = nextIdFrom(KEYS.lessons);
-let nextQuestionId = nextIdFrom(KEYS.questions);
-let nextQuizId = nextIdFrom(KEYS.quizzes);
-let nextAnnouncementId = nextIdFrom('scitech_announcements');
-let nextCalendarEventId = nextIdFrom('scitech_calendar');
 
 // ===== SUBJECTS & UNITS =====
 export function useSubjects() {
@@ -67,7 +61,7 @@ export function useSubjects() {
   const addSubject = useCallback((subject: Omit<SubjectUnit, 'id'>) => {
     const newSubject: SubjectUnit = {
       ...subject,
-      id: nextSubjectId++,
+      id: nextId(KEYS.subjects),
     };
     setSubjects(prev => [...prev, newSubject]);
     return newSubject;
@@ -107,7 +101,7 @@ export function useLessons() {
   const addLesson = useCallback((lesson: Omit<Lesson, 'id' | 'view_count'>) => {
     const newLesson: Lesson = {
       ...lesson,
-      id: nextLessonId++,
+      id: nextId(KEYS.lessons),
       view_count: 0,
     };
     setLessons(prev => [...prev, newLesson]);
@@ -138,10 +132,7 @@ export function useLessons() {
  */
 function loadQuestions(): Question[] {
   const stored = loadFromStorage<Question[]>(KEYS.questions, []);
-  const base = Array.isArray(stored) ? stored : [];
-  const maxId = base.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0);
-  nextQuestionId = maxId + 1;
-  return base;
+  return Array.isArray(stored) ? stored : [];
 }
 
 export function useQuestions() {
@@ -158,16 +149,17 @@ export function useQuestions() {
   const addQuestion = useCallback((question: Omit<Question, 'id'>) => {
     const newQuestion: Question = {
       ...question,
-      id: nextQuestionId++,
+      id: nextId(KEYS.questions),
     };
     setQuestions(prev => [...prev, newQuestion]);
     return newQuestion;
   }, []);
 
   const addQuestionsBatch = useCallback((newQuestions: Omit<Question, 'id'>[]) => {
+    let id = nextId(KEYS.questions);
     const added = newQuestions.map(q => ({
       ...q,
-      id: nextQuestionId++,
+      id: id++,
     }));
     setQuestions(prev => [...prev, ...added]);
     return added;
@@ -201,7 +193,7 @@ export function useQuizzes() {
   const addQuiz = useCallback((quiz: Omit<Quiz, 'id'>) => {
     const newQuiz: Quiz = {
       ...quiz,
-      id: nextQuizId++,
+      id: nextId(KEYS.quizzes),
     };
     setQuizzes(prev => [...prev, newQuiz]);
     return newQuiz;
@@ -221,16 +213,12 @@ export function useAnnouncements() {
 
   useEffect(() => {
     saveToStorage(KEYS_ANNOUNCEMENTS, announcements);
-    // Update next ID
-    if (announcements.length > 0) {
-      nextAnnouncementId = Math.max(...announcements.map(a => a.id)) + 1;
-    }
   }, [announcements]);
 
   const addAnnouncement = useCallback((announcement: Omit<Announcement, 'id' | 'created_at'>) => {
     const newAnnouncement: Announcement = {
       ...announcement,
-      id: nextAnnouncementId++,
+      id: nextId(KEYS_ANNOUNCEMENTS),
       created_at: new Date().toISOString().split('T')[0],
     };
     setAnnouncements(prev => [newAnnouncement, ...prev]);
@@ -316,9 +304,35 @@ export function filterVisibleAnnouncements(announcements: Announcement[], gradeL
 const KEYS_WORKSHEETS = 'scitech_worksheets';
 const WS_POLL_MS = 5000;
 
+/**
+ * รวมรายการจากเซิร์ฟเวอร์กับของท้องถิ่น — แถวที่มีเฉพาะในเครื่อง (ยัง push ไม่ขึ้น
+ * เพราะเซิร์ฟเวอร์ล่ม) ต้องรอดจากการ merge ทุกรอบ ไม่งั้นการ poll จะ "ลบ" งานที่
+ * นักเรียนเพิ่งส่งทุก 5 วินาที (สาเหตุของ "ตอบใบงานไม่ได้")
+ */
+function mergeById<T extends { id: number }>(server: T[], local: T[]): T[] {
+  const byId = new Map<number, T>();
+  for (const item of server) byId.set(item.id, item);
+  for (const item of local) if (!byId.has(item.id)) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
+/** ใบงาน/คำตอบที่ยังส่งไม่ขึ้นเซิร์ฟเวอร์ — พยายาม push ซ้ำตอน polling เจอเซิร์ฟเวอร์กลับมา */
+const pendingWorksheetPushes = new Map<number, Worksheet>();
+
 async function refreshWorksheets(setWorksheets: (w: Worksheet[]) => void) {
-  const { data } = await worksheetApi.list();
-  setWorksheets(data);
+  const { data, fromServer } = await worksheetApi.list();
+  if (fromServer) {
+    // เซิร์ฟเวอร์กลับมา → ลองส่งใบงานที่ค้างในเครื่องก่อน แล้วค่อยรวมผล
+    for (const [id, ws] of [...pendingWorksheetPushes]) {
+      const created = await worksheetApi.push(ws);
+      if (created) pendingWorksheetPushes.delete(id);
+    }
+    const local = loadFromStorage<Worksheet[]>(KEYS_WORKSHEETS, []);
+    setWorksheets(mergeById(data, local));
+  } else {
+    // เซิร์ฟเวอร์ไม่ตอบ — รวมกับของเดิม ห้ามทับแถวที่มีเฉพาะในเครื่อง
+    setWorksheets(mergeById(data, loadFromStorage<Worksheet[]>(KEYS_WORKSHEETS, [])));
+  }
 }
 
 export function useWorksheets() {
@@ -346,6 +360,8 @@ export function useWorksheets() {
   const addWorksheet = useCallback(async (worksheet: Omit<Worksheet, 'id'>) => {
     const created = await worksheetApi.add(worksheet);
     setWorksheets(prev => [created, ...prev.filter(w => w.id !== created.id)]);
+    // เซิร์ฟเวอร์ไม่ตอบ (fallback เข้าเครื่อง) — จดไว้ push ซ้ำตอนเซิร์ฟเวอร์กลับมา
+    if (created.id > 1000000000000) pendingWorksheetPushes.set(created.id, created);
     return created;
   }, []);
 
@@ -357,54 +373,50 @@ export function useWorksheets() {
   const deleteWorksheet = useCallback(async (id: number) => {
     setWorksheets(prev => prev.filter(w => w.id !== id));
     await worksheetApi.remove(id);
+    // cascade: ลบคำตอบของใบงานนี้บนคลาวด์ด้วย (เดิม server/index.js ทำให้)
+    void submissionRecords.removeByWorksheet(id);
   }, []);
 
   return { worksheets, addWorksheet, updateWorksheet, deleteWorksheet };
 }
 
-// ===== WORKSHEET SUBMISSIONS (นักเรียนส่งใบงาน) — shared via API server =====
+// ===== WORKSHEET SUBMISSIONS (นักเรียนส่งใบงาน) — per-record Supabase (Phase 1)
+// 1 คำตอบ = 1 แถวจริงในตาราง worksheet_submissions — เครื่องอื่นเขียนเรกคอร์ดอื่น
+// ไม่มีวันทับงานกันเองอีกต่อไป (สาเหตุของคะแนนหายในระบบ blob เดิม)
+// localStorage เหลือเป็น cache อ่านตอน boot/ออฟไลน์ + outbox งานที่ push ไม่ขึ้น
 const KEYS_WS_SUBMISSIONS = 'scitech_worksheet_submissions';
 
-async function refreshSubmissions(setSubmissions: (s: WorksheetSubmission[]) => void) {
-  const { data } = await submissionApi.list();
-  setSubmissions(data);
-}
-
 export function useWorksheetSubmissions() {
-  const [submissions, setSubmissions] = useState<WorksheetSubmission[]>(() =>
-    loadFromStorage<WorksheetSubmission[]>(KEYS_WS_SUBMISSIONS, [])
-  );
+  const [submissions, setSubmissions] = useState<WorksheetSubmission[]>(cacheViews.submissions);
 
+  // ดึงล่าสุดจากคลาวด์ตอน mount + ตอน realtime/refresh รอบแจ้งว่ามีการเปลี่ยนแปลง
   useEffect(() => {
-    refreshSubmissions(setSubmissions);
-    const timer = setInterval(() => refreshSubmissions(setSubmissions), WS_POLL_MS);
-    const onFocus = () => refreshSubmissions(setSubmissions);
-    window.addEventListener('focus', onFocus);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', onFocus);
+    let alive = true;
+    const pull = () => {
+      void submissionRecords.list().then(d => { if (alive) setSubmissions(d.data); });
     };
+    pull();
+    const off = onRecordsChanged(KEYS_WS_SUBMISSIONS, pull);
+    return () => { alive = false; off(); };
   }, []);
 
-  useEffect(() => {
-    saveToStorage(KEYS_WS_SUBMISSIONS, submissions);
-  }, [submissions]);
-
   const submitWorksheet = useCallback(async (submission: Omit<WorksheetSubmission, 'id'>) => {
-    const created = await submissionApi.add(submission);
-    setSubmissions(prev => [created, ...prev.filter(s => s.id !== created.id)]);
+    const created = await submissionRecords.submit(submission);
+    setSubmissions(prev => [created, ...prev.filter(s =>
+      String(s.id) !== String(created.id) &&
+      !(s.worksheet_id === created.worksheet_id && s.student_id === created.student_id))]);
     return created;
   }, []);
 
-  const gradeSubmission = useCallback(async (id: number, updates: Partial<WorksheetSubmission>) => {
-    setSubmissions(prev => prev.map(s => (s.id === id ? { ...s, ...updates } : s)));
-    await submissionApi.update(id, updates);
+  const gradeSubmission = useCallback(async (id: number | string, updates: Partial<WorksheetSubmission>) => {
+    setSubmissions(prev => prev.map(s => (String(s.id) === String(id) ? { ...s, ...updates } : s)));
+    await submissionRecords.update(id, updates);
     // บันทึกผลตรวจลงสมุดจด (append-only, sync ขึ้นคลาวด์) — แม้อุปกรณ์อื่นจะ
     // อัปโหลดสำเนาเก่าทับคำตอบก็ตาม ผลตรวจในสมุดจดจะถูกกู้คืนให้อัตโนมัติ
     try {
       const raw = localStorage.getItem(KEYS_WS_SUBMISSIONS);
       const subs: WorksheetSubmission[] = raw ? JSON.parse(raw) : [];
-      const hit = subs.find(s => s.id === id);
+      const hit = subs.find(s => String(s.id) === String(id));
       if (hit && updates.status === 'graded') {
         const jRaw = localStorage.getItem('scitech_grades_journal');
         const journal: WorksheetSubmission[] = jRaw ? JSON.parse(jRaw) : [];
@@ -429,15 +441,12 @@ export function useCalendarEvents() {
 
   useEffect(() => {
     saveToStorage(KEYS_CALENDAR, events);
-    if (events.length > 0) {
-      nextCalendarEventId = Math.max(...events.map(e => e.id)) + 1;
-    }
   }, [events]);
 
   const addEvent = useCallback((event: Omit<CalendarEvent, 'id'>) => {
     const newEvent: CalendarEvent = {
       ...event,
-      id: nextCalendarEventId++,
+      id: nextId(KEYS_CALENDAR),
     };
     setEvents(prev => [...prev, newEvent]);
     return newEvent;
@@ -460,25 +469,29 @@ export function useCalendarEvents() {
 const KEYS_ATTENDANCE_SESSIONS = 'scitech_attendance_sessions';
 const KEYS_ATTENDANCE_RECORDS = 'scitech_attendance_records';
 let nextSessionId = 3;
-let nextRecordId = 2;
 
 export function useAttendance() {
   const [sessions, setSessions] = useState<AttendanceSession[]>(() =>
     loadFromStorage(KEYS_ATTENDANCE_SESSIONS, [])
   );
-  const [records, setRecords] = useState<AttendanceRecord[]>(() =>
-    loadFromStorage(KEYS_ATTENDANCE_RECORDS, [])
-  );
+  const [records, setRecords] = useState<AttendanceRecord[]>(cacheViews.attendance);
 
   useEffect(() => {
     saveToStorage(KEYS_ATTENDANCE_SESSIONS, sessions);
     if (sessions.length > 0) nextSessionId = Math.max(...sessions.map(s => s.id)) + 1;
   }, [sessions]);
 
+  // records: 1 เรกคอร์ด = 1 แถวจริง (attendance_records) — ดึงจากคลาวด์ตอน mount
+  // + realtime/refresh รอบแจ้งเปลี่ยนแปลง (localStorage เหลือ cache/ออฟไลน์)
   useEffect(() => {
-    saveToStorage(KEYS_ATTENDANCE_RECORDS, records);
-    if (records.length > 0) nextRecordId = Math.max(...records.map(r => r.id)) + 1;
-  }, [records]);
+    let alive = true;
+    const pull = () => {
+      void attendanceRecords.list().then(d => { if (alive) setRecords(d.data); });
+    };
+    pull();
+    const off = onRecordsChanged(KEYS_ATTENDANCE_RECORDS, pull);
+    return () => { alive = false; off(); };
+  }, []);
 
   const addSession = useCallback((session: Omit<AttendanceSession, 'id' | 'created_at'>) => {
     const newSession: AttendanceSession = {
@@ -497,6 +510,7 @@ export function useAttendance() {
   const deleteSession = useCallback((id: number) => {
     setSessions(prev => prev.filter(s => s.id !== id));
     setRecords(prev => prev.filter(r => r.session_id !== id));
+    void attendanceRecords.removeBySession(id); // ลบแถวจริงของเซสชันนี้บนคลาวด์
   }, []);
 
   const toggleSessionStatus = useCallback((id: number) => {
@@ -509,17 +523,16 @@ export function useAttendance() {
     // Prevent duplicate check-in for same session
     const existing = records.find(r => r.session_id === record.session_id && r.student_id === record.student_id);
     if (existing) return existing;
-    const newRecord: AttendanceRecord = {
-      ...record,
-      id: nextRecordId++,
-      checked_in_at: new Date().toISOString(),
-    };
-    setRecords(prev => [...prev, newRecord]);
+    // เขียน cache แบบ sync (UI ตอบสนองทันที) + push คลาวด์เบื้องหลัง — ออฟไลน์ก็ไม่หาย
+    const newRecord = attendanceRecords.add(record);
+    setRecords(prev => [newRecord, ...prev.filter(r =>
+      !(r.session_id === newRecord.session_id && r.student_id === newRecord.student_id))]);
     return newRecord;
   }, [records]);
 
-  const updateRecord = useCallback((id: number, updates: Partial<AttendanceRecord>) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  const updateRecord = useCallback((id: number | string, updates: Partial<AttendanceRecord>) => {
+    setRecords(prev => prev.map(r => String(r.id) === String(id) ? { ...r, ...updates } : r));
+    void attendanceRecords.update(id, updates);
   }, []);
 
   const markAllPresent = useCallback((sessionId: number) => {
@@ -855,7 +868,6 @@ const seedUsers: AppUser[] = [
 ];
 
 const KEYS_USERS = 'scitech_users';
-let nextUserId = Math.max(...seedUsers.map(u => u.id)) + 1;
 
 export function useUsers() {
   const [users, setUsers] = useState<AppUser[]>(() => {
@@ -878,7 +890,7 @@ export function useUsers() {
   const addUser = useCallback((user: Omit<AppUser, 'id' | 'created_at'>) => {
     const newUser: AppUser = {
       ...user,
-      id: nextUserId++,
+      id: nextId(KEYS_USERS),
       created_at: new Date().toISOString().split('T')[0],
     };
     setUsers(prev => [...prev, newUser]);

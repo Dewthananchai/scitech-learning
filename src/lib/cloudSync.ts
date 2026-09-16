@@ -33,12 +33,12 @@ export const SYNCED_KEYS: string[] = [
   'scitech_subjects',
   'scitech_lesson_sessions',
   'scitech_worksheets',
-  'scitech_worksheet_submissions',
+  // (ย้ายไปตารางจริงแล้ว — src/api/recordApi.ts: scitech_worksheet_submissions,
+  //  scitech_attendance_records เหลือใน localStorage เป็น cache/outbox เท่านั้น)
   'scitech_grades_journal',
   'scitech_announcements',
   'scitech_calendar',
   'scitech_attendance_sessions',
-  'scitech_attendance_records',
   'scitech_missions',
   'scitech_daily_missions',
   'scitech_mission_completions',
@@ -57,6 +57,40 @@ export const SYNCED_KEYS: string[] = [
 ];
 
 let client: SupabaseClient | null = null;
+
+/**
+ * คีย์ "ข้อมูลที่ครูสร้าง" — อาร์เรย์ว่างห้ามขึ้นคลาวด์ และห้ามถูกดาวน์โหลดมาทับข้อมูลจริง
+ * (สาเหตุของ "ย้ายเครื่องแล้วบทเรียนหายหมด": เครื่องใหม่ mount ก่อนข้อมูลมา → state เริ่มต้น
+ * [] → ถูกอัปโหลดทับคลาวด์) คีย์ฝั่งความคืบหน้านักเรียน/เซสชัน ที่ล้างได้ตามปกติ ไม่อยู่ในลิสต์นี้
+ */
+const PROTECTED_KEYS = new Set<string>([
+  'scitech_users',
+  'scitech_subjects',
+  'scitech_lessons',
+  'scitech_questions',
+  'scitech_quizzes',
+  'scitech_announcements',
+  'scitech_calendar',
+  'scitech_worksheets',
+  'scitech_grades_journal',
+  'scitech_star_awards',
+  'scitech_star_conditions',
+  'onet_bank_data_v1',
+  'onet_levels_v1',
+  'onet_years_v1',
+  'm1_bank_data_v1',
+  'm1_bank_schools_v1',
+  'm1_bank_years_v1',
+]);
+
+function isEmptyArrayJson(raw: unknown): boolean {
+  try {
+    const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(v) && v.length === 0;
+  } catch {
+    return false;
+  }
+}
 
 export const cloudSyncConfigured = (): boolean =>
   Boolean(SUPABASE_URL && SUPABASE_ANON_KEY &&
@@ -215,8 +249,18 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
       const cloudAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
       const localAt = localMeta ? Number(localMeta) : 0;
       if (!local || cloudAt > localAt) {
-        // ทะเบียนผู้ใช้: normalize ทุกครั้งที่ดึงจากคลาวด์ — เติมฟิลด์ที่หาย (is_active/class_name/grade_level)
         const raw = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+        // กันข้อมูลสูญหาย: คลาวด์เป็น "อาร์เรย์ว่าง" แต่เครื่องนี้มีข้อมูลจริง —
+        // นี่คือรอยเท้าของเครื่องที่อัปโหลด [] ทับ (บั๊กเปิดแอปก่อนข้อมูลมา)
+        // → ห้ามทับของเครื่องนี้ และดันข้อมูลจริงกลับขึ้นคลาวด์ทันที (กู้คืนอัตโนมัติ)
+        if (local && PROTECTED_KEYS.has(row.id) && isEmptyArrayJson(raw) && !isEmptyArrayJson(local)) {
+          console.warn(`[cloudSync] คลาวด์ของ ${row.id} เป็นอาร์เรย์ว่าง — คงข้อมูลจริงในเครื่องไว้และอัปโหลดกู้คืน`);
+          lastKnown.set(row.id, local);
+          dirty.set(row.id, { value: local, updatedAt: new Date().toISOString() });
+          scheduleFlush();
+          continue;
+        }
+        // ทะเบียนผู้ใช้: normalize ทุกครั้งที่ดึงจากคลาวด์ — เติมฟิลด์ที่หาย (is_active/class_name/grade_level)
         const value = row.id === USER_REGISTER_KEY ? normalizeUserRegister(raw) : raw;
         // ต้องจำค่าลง lastKnown ก่อน setItem — มิฉะนั้น write interceptor จะถือว่า
         // "มีการเขียนใหม่" แล้วอัปโหลดค่าที่เพิ่งดาวน์โหลดกลับขึ้นคลาวด์ทุกคีย์ทุกครั้งที่เปิดแอป
@@ -232,6 +276,14 @@ export async function hydrateFromCloud(): Promise<{ synced: number; errors: stri
         synced++;
       } else {
         lastKnown.set(row.id, local); // สำเนาเครื่องใหม่กว่า — จำไว้ ไม่ให้ polling ยัดซ้ำ
+        // กู้คืนอัตโนมัติ (กรณีเวลาเครื่องนี้ใหม่กว่าคลาวด์ด้วย): คลาวด์ว่างแต่เครื่องนี้
+        // มีข้อมูลจริง → ดันกลับขึ้นคลาวด์เสมอ ไม่สน timestamp (อุปกรณ์ใดที่ยังมีบทเรียน
+        // ครบจะกลายเป็นตัวกู้ข้อมูลให้ทั้งระบบโดยอัตโนมัติ)
+        if (PROTECTED_KEYS.has(row.id) && isEmptyArrayJson(row.value) && !isEmptyArrayJson(local)) {
+          console.warn(`[cloudSync] คลาวด์ของ ${row.id} ว่างแต่เครื่องนี้มีข้อมูลจริง — อัปโหลดกู้คืน`);
+          dirty.set(row.id, { value: local, updatedAt: new Date().toISOString() });
+          scheduleFlush();
+        }
         if (row.id === USER_REGISTER_KEY) {
         let merged = mergePasswords(local, row.value);
         // และ normalize ฟิลด์ที่จำเป็นด้วย — กันทะเบียนที่ไม่ครบฟิลด์วนกลับมาใหม่
@@ -313,6 +365,7 @@ function mergePasswords(localRaw: string, cloudRaw: unknown): string {
 const metaKey = (id: string) => `__synced_at__${id}`;
 
 const USER_REGISTER_KEY = 'scitech_users';
+/** (ย้ายไปตารางจริง recordApi แล้ว — คง merge สมุดจดไว้เพื่อกู้คะแนนเก่า) */
 const SUBMISSIONS_KEY = 'scitech_worksheet_submissions';
 /** สมุดจดผลการตรวจ (append-only) — กันคะแนนหายแม้ถูกอุปกรณ์เก่าทับ */
 const JOURNAL_KEY = 'scitech_grades_journal';
@@ -520,6 +573,13 @@ export function mirrorWrite(key: string, value?: string): void {
   if (!SYNCED_KEYS.includes(key)) return;
   const val = value !== undefined ? value : localStorage.getItem(key);
   if (val === null) return;
+  // กันข้อมูลสูญหาย: ข้อมูลครูเป็น "อาร์เรย์ว่าง" ห้ามอัปโหลด — เครื่องที่ state ยังไม่ hydrate
+  // (แท็บเก่า/โค้ดเก่า/เน็ตช้า) จะไม่มีวันล้างข้อมูลจริงบนคลาวด์ด้วยสำเนาว่างอีก
+  // (ถ้าล้างจริง ให้ลบทีละแถว — การอัปโหลดค่าที่ยังมีข้อมูลทำได้ปกติ)
+  if (PROTECTED_KEYS.has(key) && isEmptyArrayJson(val)) {
+    console.warn(`[cloudSync] ข้ามการอัปโหลด ${key}: เป็นอาร์เรย์ว่าง (กันล้างข้อมูลจริงบนคลาวด์)`);
+    return;
+  }
   // ข้ามถ้าค่าเหมือนค่าล่าสุดที่เรารู้จัก — ลูปเขียนซ้ำจาก polling จะไม่ปลุกการอัปโหลด
   // (กันอุปกรณ์สองเครื่องแย่งเขียนทับกัน: เครื่องที่ไม่ได้แก้จริงจะไม่มีวันชนะ timestamp)
   if (lastKnown.get(key) === val) return;

@@ -116,8 +116,8 @@ export default function AdminAttendance() {
     });
   };
 
-  const toggleRecordStatus = (recordId: number) => {
-    const record = records.find(r => r.id === recordId);
+  const toggleRecordStatus = (recordId: number | string) => {
+    const record = records.find(r => String(r.id) === String(recordId));
     if (!record) return;
     const order: Array<typeof record.status> = ['present', 'late', 'leave', 'absent'];
     const currentIdx = order.indexOf(record.status);

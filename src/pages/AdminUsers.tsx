@@ -244,8 +244,8 @@ export default function AdminUsers() {
     });
   };
 
-  const toggleRecordStatus = (recordId: number) => {
-    const record = attRecords.find(r => r.id === recordId);
+  const toggleRecordStatus = (recordId: number | string) => {
+    const record = attRecords.find(r => String(r.id) === String(recordId));
     if (!record) return;
     const order: Array<typeof record.status> = ['present', 'late', 'leave', 'absent'];
     const nextStatus = order[(order.indexOf(record.status) + 1) % order.length];
