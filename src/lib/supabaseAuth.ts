@@ -3,7 +3,11 @@
    bcrypt ฝั่งเซิร์ฟเวอร์ ไม่ปรากฏใน app_state อีกต่อไป)
    ============================================================
    แอปใช้ username ล้วน แต่ Supabase Auth ต้องการ email →
-   ใช้อีเมลสังเคราะห์รูปแบบ username@scitech.local
+   ใช้อีเมลสังเคราะห์รูปแบบ username@scitech-learning.app
+
+   หมายเหตุ: เคยใช้ @scitech.local แต่ GoTrue รุ่นใหม่ปฏิเสธ
+   โดเมนที่ไม่มี TLD จริง ("email_address_invalid") จึงต้องใช้
+   โดเมนที่ผ่านการตรวจสอบรูปแบบแทน
 
    ขั้นตอนรีโอนครั้งแรก (backfill): บัญชีในทะเบียน scitech_users
    ยังไม่มีในระบบ auth → ลองล็อกอินแล้วพลาดเพราะ "ไม่พบบัญชี" →
@@ -27,8 +31,8 @@ export interface RegisterUser {
 }
 
 export const authEmail = (username: string) =>
-  `${username.toLowerCase().trim()}@scitech.local`;
-const AUTH_DOMAIN = 'scitech.local';
+  `${username.toLowerCase().trim()}@${AUTH_DOMAIN}`;
+const AUTH_DOMAIN = 'scitech-learning.app';
 
 /** ผลล็อกอินแบบรวม: Supabase Auth ก่อน, ทะเบียนเดิมเป็นทางถอยหลัง */
 export async function signInWithUsername(
