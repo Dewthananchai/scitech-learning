@@ -1,7 +1,7 @@
 # วิธีรัน supabase/schema-auth.sql — 3 ทางเลือก
 
 ## ทางที่ 1: SQL Editor (ง่ายที่สุด)
-1. เปิด https://supabase.com/dashboard → เลือกโปรเจกต์ `skqjnkawlmewazmrtevt`
+1. เปิด https://supabase.com/dashboard → เลือกโปรเจกต์ของคุณ (ดู URL ได้จาก `VITE_SUPABASE_URL` ในไฟล์ `.env.local`)
 2. เมนูซ้าย → **SQL Editor** → **New query**
 3. เปิดไฟล์ `supabase/schema-auth.sql` ในโฟลเดอร์โปรเจกต์ → เลือกทั้งหมด (Cmd+A) → คัดลอก (Cmd+C) → วาง (Cmd+V) → กด **Run**
 4. ต้องขึ้น "Success. No rows returned"
@@ -14,7 +14,7 @@
 
 ## ทางที่ 3: psql (ถ้ามี database password)
 ```bash
-psql "postgresql://postgres:[PASSWORD]@db.skqjnkawlmewazmrtevt.supabase.co:5432/postgres" -f supabase/schema-auth.sql
+psql "postgresql://postgres:[PASSWORD]@db.YOUR-PROJECT-REF.supabase.co:5432/postgres" -f supabase/schema-auth.sql
 ```
 
 ## ⚠️ อย่าลืม: ปิดยืนยันอีเมล
